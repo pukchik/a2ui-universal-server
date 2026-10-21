@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { Config } from "./config.ts";
 import type { Store, Session } from "./storage/store.ts";
 import { AppError } from "../packages/core/src/errors.ts";
+import { api } from "./openapi.ts";
 export const token = () => randomBytes(32).toString("base64url");
 export const tokenHash = (v: string) =>
   createHash("sha256").update(v).digest("hex");
@@ -104,7 +105,7 @@ export async function registerAuth(
           : [],
       },
     ));
-  app.get("/v1/session", async (req, reply) => {
+  app.get("/v1/session", { schema: api.session }, async (req, reply) => {
     reply.header("cache-control", "no-store");
     const session = await read(req);
     return session
@@ -122,14 +123,14 @@ export async function registerAuth(
           adapter: adapterName,
         };
   });
-  app.post("/auth/demo", async (req, reply) => {
+  app.post("/auth/demo", { schema: api.demoLogin }, async (req, reply) => {
     if (config.AUTH_MODE !== "demo") throw new AppError(404, "not_found");
     if (req.headers.origin !== new URL(config.PUBLIC_URL).origin)
       throw new AppError(403, "origin");
     await signIn(reply, "demo-user", "Локальный демонстрационный пользователь");
     return { ok: true };
   });
-  app.get("/auth/login", async (_req, reply) => {
+  app.get("/auth/login", { schema: api.login }, async (_req, reply) => {
     if (custom) {
       if (!custom.login) throw new AppError(501, "login_not_supported");
       return custom.login(_req, reply);
@@ -153,7 +154,7 @@ export async function registerAuth(
       }).href,
     );
   });
-  app.get("/auth/callback", async (req, reply) => {
+  app.get("/auth/callback", { schema: api.callback }, async (req, reply) => {
     if (config.AUTH_MODE !== "oidc") throw new AppError(404, "not_found");
     const key = req.cookies.a2ui_oidc;
     if (!key) throw new AppError(401, "login_state");
@@ -180,7 +181,7 @@ export async function registerAuth(
     );
     return reply.redirect("/");
   });
-  app.post("/auth/logout", async (req, reply) => {
+  app.post("/auth/logout", { schema: api.logout }, async (req, reply) => {
     const user = await requireUser(req);
     csrf(req, user);
     if (custom) {

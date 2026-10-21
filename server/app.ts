@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import swagger from "@fastify/swagger";
+import { api, registerOpenApi } from "./openapi.ts";
 import cookie from "@fastify/cookie";
 import staticFiles from "@fastify/static";
 import { readFile } from "node:fs/promises";
@@ -19,12 +19,6 @@ import type { CatalogProfile } from "./catalog-profile.ts";
 import { compileComponentSchemas } from "../catalog/index.ts";
 import type { ComponentCatalog } from "../catalog/index.ts";
 import { AppError } from "../packages/core/src/errors.ts";
-import {
-  createDialogSchema,
-  messageSchema,
-  actionSchema,
-  cancelSchema,
-} from "../packages/contracts/src/index.ts";
 import type { Action } from "../packages/contracts/src/index.ts";
 export type AppOptions = {
   adapter: Adapter;
@@ -89,10 +83,7 @@ export async function buildApp(config: Config, options: AppOptions) {
       throw new Error("Инструкции проекта слишком большие");
     engine.instructions += `\n${instructions}`;
   }
-  await app.register(swagger, {
-    openapi: { info: { title: "A2UI Uniserver", version: "0.1.0" } },
-  });
-  app.get("/openapi.json", async () => app.swagger());
+  await registerOpenApi(app);
   await app.register(cookie);
   const adapterName = options.adapterName ?? options.adapter.kind;
   const auth = await registerAuth(
@@ -131,17 +122,9 @@ export async function buildApp(config: Config, options: AppOptions) {
       },
     });
   });
-  const params = {
-    type: "object",
-    properties: {
-      id: { type: "string", format: "uuid" },
-      runId: { type: "string", format: "uuid" },
-    },
-    required: ["id"],
-  } as const;
   app.post<{ Body: { commandId: string; text: string } }>(
     "/v1/generations",
-    { schema: { body: messageSchema } },
+    { schema: api.generate },
     async (req, reply) => {
       const user = await auth.requireUser(req);
       auth.csrf(req, user);
@@ -154,7 +137,7 @@ export async function buildApp(config: Config, options: AppOptions) {
   );
   app.get<{ Params: { id: string } }>(
     "/v1/generations/:id",
-    { schema: { params } },
+    { schema: api.generation },
     async (req) => {
       const result = await store.snapshot(
         req.params.id,
@@ -172,7 +155,7 @@ export async function buildApp(config: Config, options: AppOptions) {
   );
   app.post<{ Params: { id: string }; Body: { commandId: string } }>(
     "/v1/generations/:id/cancel",
-    { schema: { params, body: cancelSchema } },
+    { schema: api.cancelGeneration },
     async (req) => {
       const user = await auth.requireUser(req);
       auth.csrf(req, user);
@@ -189,19 +172,22 @@ export async function buildApp(config: Config, options: AppOptions) {
       return result;
     },
   );
-  app.get("/health", async () => ({ ok: true, version: "0.1.0" }));
-  app.get("/v1/config", async () => ({
+  app.get("/health", { schema: api.health }, async () => ({
+    ok: true,
+    version: "0.1.0",
+  }));
+  app.get("/v1/config", { schema: api.config }, async () => ({
     protocol: "v0.9.1",
     catalogId: store.catalog!.id,
     profile: store.catalog!.profile,
     adapter: adapterName,
   }));
-  app.get("/v1/dialogs", async (req) =>
+  app.get("/v1/dialogs", { schema: api.listDialogs }, async (req) =>
     store.list((await auth.requireUser(req)).userId),
   );
   app.post<{ Body: { commandId: string } }>(
     "/v1/dialogs",
-    { schema: { body: createDialogSchema } },
+    { schema: api.createDialog },
     async (req, reply) => {
       const user = await auth.requireUser(req);
       auth.csrf(req, user);
@@ -212,13 +198,13 @@ export async function buildApp(config: Config, options: AppOptions) {
   );
   app.get<{ Params: { id: string } }>(
     "/v1/dialogs/:id",
-    { schema: { params } },
+    { schema: api.getDialog },
     async (req) =>
       store.get(req.params.id, (await auth.requireUser(req)).userId),
   );
   app.get<{ Params: { id: string } }>(
     "/v1/dialogs/:id/snapshot",
-    { schema: { params } },
+    { schema: api.snapshot },
     async (req) => {
       const result = await store.snapshot(
         req.params.id,
@@ -234,7 +220,7 @@ export async function buildApp(config: Config, options: AppOptions) {
   );
   app.get<{ Params: { id: string } }>(
     "/v1/dialogs/:id/messages",
-    { schema: { params } },
+    { schema: api.messages },
     async (req) =>
       (
         await store.snapshot(
@@ -248,7 +234,7 @@ export async function buildApp(config: Config, options: AppOptions) {
     Body: { commandId: string; text: string };
   }>(
     "/v1/dialogs/:id/messages",
-    { schema: { params, body: messageSchema } },
+    { schema: api.message },
     async (req, reply) => {
       const user = await auth.requireUser(req);
       auth.csrf(req, user);
@@ -264,31 +250,27 @@ export async function buildApp(config: Config, options: AppOptions) {
   app.post<{
     Params: { id: string };
     Body: { commandId: string; uiRevision: number; action: Action };
-  }>(
-    "/v1/dialogs/:id/actions",
-    { schema: { params, body: actionSchema } },
-    async (req, reply) => {
-      const user = await auth.requireUser(req);
-      auth.csrf(req, user);
-      return reply
-        .code(202)
-        .send(
-          await store.accept(
-            user.userId,
-            req.params.id,
-            req.body.commandId,
-            { action: req.body.action },
-            req.body.uiRevision,
-          ),
-        );
-    },
-  );
+  }>("/v1/dialogs/:id/actions", { schema: api.action }, async (req, reply) => {
+    const user = await auth.requireUser(req);
+    auth.csrf(req, user);
+    return reply
+      .code(202)
+      .send(
+        await store.accept(
+          user.userId,
+          req.params.id,
+          req.body.commandId,
+          { action: req.body.action },
+          req.body.uiRevision,
+        ),
+      );
+  });
   app.post<{
     Params: { id: string; runId: string };
     Body: { commandId: string };
   }>(
     "/v1/dialogs/:id/runs/:runId/cancel",
-    { schema: { params, body: cancelSchema } },
+    { schema: api.cancel },
     async (req) => {
       const user = await auth.requireUser(req);
       auth.csrf(req, user);
@@ -304,7 +286,7 @@ export async function buildApp(config: Config, options: AppOptions) {
   );
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
     "/v1/dialogs/:id/events",
-    { schema: { params } },
+    { schema: api.events },
     async (req, reply) => {
       const session = await auth.requireUser(req);
       const cursor = req.headers["last-event-id"] ?? req.query.after ?? "0";

@@ -52,6 +52,8 @@ const server = await startServer(configFrom(process.env), {
 
 Для статического фронтенда передайте `webRoot` с абсолютным путём к сборке. Без него API работает, но страница `/` не обслуживается. Можно оставить отдельный dev-сервер с proxy, как в `demo/web/vite.config.ts`.
 
+Swagger доступен на `/docs/` независимо от `webRoot`; спецификация собирается автоматически на `/openapi.json`, а `pnpm openapi` экспортирует её без запуска БД/агента. Используйте документацию на том же origin, что и клиент; в dev-примере Vite проксирует `/docs` и OpenAPI вместе с API. Вход, автоматический CSRF и правила Try it out — в [API.md](API.md#swagger-и-экспорт).
+
 Создайте свой `project/.env`, не добавляя его в Git:
 
 ```dotenv

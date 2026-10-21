@@ -21,7 +21,7 @@ PostgreSQL ставится из официального PGDG-репозито�
 
 После добавления custom auth, ToolContext, startServer и внешнего приложения [запуск 109](https://home.eralas.ru/git/eralash/A2UI-uniserver/actions/runs/109) на `d4ba527` прошёл 112 тестов в 9 файлах и зависимую сборку. `tests` заняла 55 секунд, `build` — 23 секунды.
 
-С профилями каталогов, квотами и retention локальный набор вырос до 128 тестов в 12 файлах. Workflow запускает все `tests/**/*.test.ts`, включая новые; изменения workflow не потребовались. Retention проверяется только на БД временного кластера, удаление файлов runtime — с подставным runner. Текущий результат push проверяйте в [Actions](https://home.eralas.ru/git/eralash/A2UI-uniserver/actions).
+С профилями каталогов, квотами и retention [запуск 110](https://home.eralas.ru/git/eralash/A2UI-uniserver/actions/runs/110) на `307fbca` прошёл 128 тестов в 12 файлах и зависимую сборку. С OpenAPI/Swagger локальный набор вырос до 132 тестов в 13 файлах. Workflow запускает все `tests/**/*.test.ts`, включая новые; изменения workflow не потребовались. Retention проверяется только на БД временного кластера, удаление файлов runtime — с подставным runner. Текущий результат push проверяйте в [Actions](https://home.eralas.ru/git/eralash/A2UI-uniserver/actions).
 
 Зависимость `needs: tests` и порядок jobs проверены. Намеренно ломающий тестовый commit не публиковался; отдельного эксперимента с отказом всего workflow не было.
 

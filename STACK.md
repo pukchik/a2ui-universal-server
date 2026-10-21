@@ -9,7 +9,7 @@
 | Область        | Реализация                                                                                    |
 | -------------- | --------------------------------------------------------------------------------------------- |
 | Среда          | Node.js 24+, TypeScript strict с запуском `.ts` без emit, pnpm 12.14.0                        |
-| HTTP           | Fastify 5, TypeBox для запросов, Swagger/OpenAPI, cookie-сессия, SSE                          |
+| HTTP           | Fastify 5, TypeBox, автоген OpenAPI 3.0.3, Swagger UI 6.1.2, cookie-сессия, SSE               |
 | Хранение       | PostgreSQL (в примере и CI — 18), `pg`, Drizzle; критические транзакции — SQL                 |
 | Авторизация    | OIDC через `openid-client`, PKCE/state/nonce; отдельный локальный demo-вход                   |
 | UI             | A2UI `v0.9.1`, официальный валидатор `@a2ui/web_core@0.14.0`, AJV 2020 для редактируемых схем |
@@ -28,6 +28,7 @@ server/
   index.ts                Публичные экспорты для подключения
   start.ts                Миграции, lock, listener, shutdown через startServer
   app.ts                  Низкоуровневая сборка через buildApp
+  openapi.ts              Схемы маршрутов/ответов, генератор OpenAPI и Swagger UI
   config.ts               Проверка окружения
   auth.ts                 OIDC, сессии, CSRF
   engine.ts               Очередь запусков, инструменты, отмена и исправление
@@ -60,7 +61,8 @@ demo/                     Приложение ламп: server, web, scripts, d
 examples/notes/           Приложение с собственной сессией и личными данными
 examples/custom-catalog/  Свои JSON-схема, SDK-модель и Lit-компонент
 scripts/maintenance.ts    Dry-run / применение политики хранения
-tests/                    Двенадцать файлов Vitest и имитатор Codex CLI
+scripts/openapi.ts        Экспорт спецификации без подключения БД и агента
+tests/                    Тринадцать файлов Vitest и имитатор Codex CLI
 ```
 
 `server/` не импортирует предметные данные или инструкции из `demo/`. Демоприложение передаёт в `buildApp` адаптер, инструменты, инструкции и путь к собранному клиенту. Каталог UI находится вне `demo/`; каталог товаров — в `demo/server/tools.ts`.
@@ -70,6 +72,10 @@ tests/                    Двенадцать файлов Vitest и имита
 Собственная точка входа вызывает `startServer` из `server/index.ts`: миграции → advisory lock → listener → Engine. Ошибка старта закрывает ресурсы. `close()` идемпотентен, снимает обработчики сигналов и закрывает Fastify/Store; потеря lock останавливает приложение. Helper обрабатывает SIGINT/SIGTERM, если не задано `handleSignals: false`. Низкоуровневый `buildApp` оставляет этот порядок вызывающему коду. Пример полного кода — в [INTEGRATION.md](docs/INTEGRATION.md).
 
 Блокировка PostgreSQL допускает одного исполнителя для БД. Это не кластер worker-процессов с lease. При получении блокировки ранее `running` запуски становятся `failed/interrupted`, `queued` остаются в очереди. Внутренний thread Codex не восстанавливается.
+
+## HTTP и документация
+
+OpenAPI собирается `@fastify/swagger` из зарегистрированных маршрутов с метаданными `schema` в `server/openapi.ts`. TypeBox-схемы тел общие с contracts; схемы ответов используются сериализатором Fastify. `/openapi.json` и `/docs/json` содержат тот же документ, `/docs/yaml` — YAML; `@fastify/swagger-ui` обслуживает `/docs/` локальными ресурсами. Включены 19 публичных операций, ответы/ошибки, session cookie, CSRF и SSE. Служебный MCP и файлы документации скрыты. `pnpm openapi` выводит JSON в stdout без чтения env-файла, подключения БД и вызова модели. Работа с авторизацией из Swagger описана в [API.md](docs/API.md#swagger-и-экспорт).
 
 ## Хранение и команды
 
