@@ -1,8 +1,0 @@
-{
-  "backend": {
-    "directory": "deploy/strazh-build",
-    "port": 3100,
-    "healthPath": "/health",
-    "persistent": false
-  }
-}
