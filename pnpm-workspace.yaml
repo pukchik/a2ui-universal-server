@@ -1,0 +1,6 @@
+packages:
+  - apps/*
+  - packages/*
+minimumReleaseAgeExclude:
+  - vite@8.3.5
+verifyDepsBeforeRun: false

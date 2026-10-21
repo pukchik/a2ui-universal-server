@@ -1,0 +1,8 @@
+{
+  "name": "project-components",
+  "type": "mcp",
+  "url": "https://catalog.example.test/mcp",
+  "tool": "get_catalog",
+  "args": {},
+  "tokenEnv": "PROJECT_CATALOG_TOKEN"
+}

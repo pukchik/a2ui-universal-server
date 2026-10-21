@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: a2ui
+      POSTGRES_USER: a2ui
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-a2ui}
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["postgres-data:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U a2ui -d a2ui"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.2
+    profiles: ["oidc"]
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: local-admin-only
+    ports: ["127.0.0.1:18080:8080"]
+    volumes:
+      ["./deploy/realm.json:/opt/keycloak/data/import/a2ui-realm.json:ro"]
+  server:
+    profiles: ["server"]
+    build: .
+    init: true
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3100
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3100}
+      DATABASE_URL: postgres://a2ui:${POSTGRES_PASSWORD:-a2ui}@db:5432/a2ui
+      AUTH_MODE: oidc
+      OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:18080/realms/a2ui}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-a2ui}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-local-development-secret}
+      ADAPTER: codex
+      CODEX_PROFILE_DIR: /var/lib/codex
+    ports: ["127.0.0.1:3100:3100"]
+    volumes: ["${CODEX_PROFILE_DIR:-./.codex-runtime/profile}:/var/lib/codex"]
+    depends_on:
+      db: { condition: service_healthy }
+volumes:
+  postgres-data:

@@ -1,0 +1,2 @@
+ALTER TABLE dialogs ADD COLUMN IF NOT EXISTS task_state jsonb NOT NULL DEFAULT '{}';
+INSERT INTO migrations(version) VALUES(3) ON CONFLICT DO NOTHING;

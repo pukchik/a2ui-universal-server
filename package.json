@@ -1,0 +1,47 @@
+{
+  "name": "a2ui-uniserver",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.14.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --watch apps/server/src/main.ts",
+    "start": "node --env-file-if-exists=.env apps/server/src/main.ts",
+    "web:dev": "vite --config apps/web/vite.config.ts",
+    "build": "pnpm check && vite build --config apps/web/vite.config.ts",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "db:migrate": "node --env-file-if-exists=.env apps/server/src/migrate.ts",
+    "smoke:codex": "node --env-file-if-exists=.env scripts/smoke-codex.ts",
+    "format": "prettier --write apps packages tests scripts deploy package.json tsconfig.json vitest.config.ts compose.yaml pnpm-workspace.yaml",
+    "browser:install": "playwright install chromium"
+  },
+  "dependencies": {
+    "@a2ui/lit": "0.14.0",
+    "@a2ui/web_core": "0.14.0",
+    "@fastify/cookie": "11.1.3",
+    "@fastify/static": "10.1.6",
+    "@fastify/swagger": "9.6.1",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@sinclair/typebox": "0.34.48",
+    "ajv": "8.20.0",
+    "drizzle-orm": "0.45.4",
+    "fastify": "5.12.7",
+    "lit": "3.3.3",
+    "openid-client": "6.8.8",
+    "pg": "8.23.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.10.1",
+    "@types/pg": "8.23.1",
+    "prettier": "3.6.2",
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "vitest": "5.0.3"
+  }
+}
