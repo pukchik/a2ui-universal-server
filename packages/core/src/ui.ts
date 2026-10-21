@@ -4,8 +4,8 @@ import {
   STRICT_VALIDATION,
 } from "@a2ui/web_core/v0_9";
 import { basicCatalog } from "@a2ui/web_core/v0_9/basic_catalog";
+import type { Catalog, ComponentApi } from "@a2ui/web_core/catalog";
 import type { Action, UiMessage, UiState } from "../../contracts/src/index.ts";
-import { CATALOG_ID } from "../../contracts/src/index.ts";
 import { AppError } from "./errors.ts";
 import { componentSchemas } from "../../../catalog/index.ts";
 import type { ComponentCatalog } from "../../../catalog/index.ts";
@@ -34,6 +34,7 @@ export function applyUi(
   current: UiState,
   messages: unknown,
   catalog?: ComponentCatalog,
+  model: Catalog<ComponentApi> = basicCatalog,
 ): UiState {
   if (
     !Array.isArray(messages) ||
@@ -46,7 +47,7 @@ export function applyUi(
       "Ожидается до 32 сообщений A2UI, не более 128 КБ.",
     );
   safeJson(messages);
-  const schemas = componentSchemas(catalog);
+  const schemas = componentSchemas(catalog, model);
   const surfaces = new Map<
     string,
     {
@@ -59,7 +60,7 @@ export function applyUi(
     ...current.messages,
     ...messages,
   ]) as UiMessage[];
-  const processor = new MessageProcessor([basicCatalog], undefined, {
+  const processor = new MessageProcessor([model], undefined, {
     version: "v0.9.1",
     validationConfig: STRICT_VALIDATION,
   });
@@ -79,7 +80,7 @@ export function applyUi(
         | undefined;
       if (create) {
         if (
-          create.catalogId !== CATALOG_ID ||
+          create.catalogId !== model.id ||
           surfaces.has(create.surfaceId) ||
           surfaces.size >= 8
         )

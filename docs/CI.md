@@ -19,7 +19,9 @@ PostgreSQL ставится из официального PGDG-репозито�
 
 При первоначальной настройке в [запуске 99](https://home.eralas.ru/git/eralash/A2UI-uniserver/actions/runs/99) `tests` получила cache miss и сохранила кэш pnpm около 192 МБ, а зависимая `build` восстановила его с cache hit. Установка зависимостей заняла 11,5 секунды без кэша и 4,8 секунды после восстановления; само восстановление добавило около 7 секунд. Это исторические замеры работы кэша, не обещание времени каждого запуска. PostgreSQL тогда устанавливалась 13 секунд; workflow продолжает устанавливать её только в `tests`.
 
-После добавления custom auth, ToolContext, startServer и внешнего приложения локальный набор вырос до 112 тестов в 9 файлах. Workflow запускает все файлы `tests/**/*.test.ts`, включая новые; изменения workflow не потребовались. Текущий результат push проверяйте в [Actions](https://home.eralas.ru/git/eralash/A2UI-uniserver/actions).
+После добавления custom auth, ToolContext, startServer и внешнего приложения [запуск 109](https://home.eralas.ru/git/eralash/A2UI-uniserver/actions/runs/109) на `d4ba527` прошёл 112 тестов в 9 файлах и зависимую сборку. `tests` заняла 55 секунд, `build` — 23 секунды.
+
+С профилями каталогов, квотами и retention локальный набор вырос до 128 тестов в 12 файлах. Workflow запускает все `tests/**/*.test.ts`, включая новые; изменения workflow не потребовались. Retention проверяется только на БД временного кластера, удаление файлов runtime — с подставным runner. Текущий результат push проверяйте в [Actions](https://home.eralas.ru/git/eralash/A2UI-uniserver/actions).
 
 Зависимость `needs: tests` и порядок jobs проверены. Намеренно ломающий тестовый commit не публиковался; отдельного эксперимента с отказом всего workflow не было.
 

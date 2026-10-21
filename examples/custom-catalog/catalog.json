@@ -1,0 +1,21 @@
+{
+  "catalogId": "https://example.invalid/a2ui/status/catalog.json",
+  "$id": "https://example.invalid/a2ui/status/catalog.json",
+  "version": "1.0.0",
+  "profile": "status-v1",
+  "functions": {},
+  "common": {},
+  "$defs": {},
+  "components": {
+    "StatusBadge": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "component": { "const": "StatusBadge" },
+        "label": { "type": "string", "minLength": 1 }
+      },
+      "required": ["id", "component", "label"],
+      "additionalProperties": false
+    }
+  }
+}

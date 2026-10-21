@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import type { AnySchemaObject, ValidateFunction } from "ajv";
 import { basicCatalog } from "@a2ui/web_core/v0_9/basic_catalog";
+import type { Catalog, ComponentApi } from "@a2ui/web_core/catalog";
 import manifest from "./catalog.json" with { type: "json" };
 
 export type ComponentCatalog = {
@@ -19,10 +20,13 @@ export type ComponentCatalog = {
 const directory = fileURLToPath(new URL(".", import.meta.url));
 const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
 
-export function loadEditableCatalog(root = directory): ComponentCatalog {
+export function loadEditableCatalog(
+  root = directory,
+  model: Catalog<ComponentApi> = basicCatalog,
+): ComponentCatalog {
   const config = readJson(join(root, "catalog.json")) as typeof manifest;
   if (
-    config.catalogId !== basicCatalog.id ||
+    config.catalogId !== model.id ||
     typeof config.version !== "string" ||
     !config.version ||
     typeof config.profile !== "string" ||
@@ -65,13 +69,21 @@ export function loadEditableCatalog(root = directory): ComponentCatalog {
     ),
     common: readJson(join(root, "common.json")),
   };
-  compileComponentSchemas(document);
+  compileComponentSchemas(document, model);
   return document;
 }
 
 // Schemas come from operator-controlled files or pinned database snapshots.
 // No remote schema fetching or coercion of model output is allowed here.
-export function compileComponentSchemas(document: ComponentCatalog) {
+export function compileComponentSchemas(
+  document: ComponentCatalog,
+  model: Catalog<ComponentApi> = basicCatalog,
+) {
+  if (
+    document.catalogId !== model.id ||
+    !Object.keys(document.components).length
+  )
+    throw new Error("Каталог и серверная модель несовместимы");
   const ajv = new Ajv2020({
     strict: true,
     strictTypes: false,
@@ -106,9 +118,9 @@ export function compileComponentSchemas(document: ComponentCatalog) {
   });
   const validators = new Map<string, ValidateFunction>();
   for (const [name, schema] of Object.entries(document.components)) {
-    if (!basicCatalog.components.has(name))
+    if (!model.components.has(name))
       throw new Error(
-        `${name}: компонент не реализован текущим Basic renderer`,
+        `${name}: компонент не реализован серверной моделью каталога`,
       );
     if (!schema || typeof schema !== "object" || Array.isArray(schema))
       throw new Error(`${name}: ожидается JSON Schema объекта`);
@@ -135,11 +147,18 @@ export const supportedComponents = Object.freeze(
 );
 const compiled = new Map<string, ReturnType<typeof compileComponentSchemas>>();
 
-export function componentSchemas(document: ComponentCatalog = editableCatalog) {
-  const key = JSON.stringify(document);
+export function componentSchemas(
+  document: ComponentCatalog = editableCatalog,
+  model: Catalog<ComponentApi> = basicCatalog,
+) {
+  const key = JSON.stringify([
+    document,
+    model.id,
+    [...model.components.keys()],
+  ]);
   const cached = compiled.get(key);
   if (cached) return cached;
-  const validators = compileComponentSchemas(document);
+  const validators = compileComponentSchemas(document, model);
   if (compiled.size >= 16) compiled.delete(compiled.keys().next().value!);
   compiled.set(key, validators);
   return validators;

@@ -8,6 +8,10 @@ import { defaultCatalog } from "../../packages/catalogs/src/index.ts";
 import type { CatalogSnapshot } from "../../packages/catalogs/src/index.ts";
 import { AppError } from "../../packages/core/src/errors.ts";
 import { applyUi, validateAction } from "../../packages/core/src/ui.ts";
+import { catalogModel } from "../catalog-profile.ts";
+import type { CatalogProfile } from "../catalog-profile.ts";
+import { retentionSchema } from "../retention.ts";
+import type { RetentionOptions } from "../retention.ts";
 import type {
   Action,
   ChatMessage,
@@ -48,6 +52,9 @@ const runFrom = (row: Record<string, any>): Run => ({
 });
 export class Store {
   catalog?: CatalogSnapshot;
+  catalogProfiles: readonly CatalogProfile[] = [];
+  maxPendingRuns = 100;
+  maxUserPendingRuns = 10;
   pool: pg.Pool;
   db: ReturnType<typeof drizzle>;
   lock?: Client;
@@ -85,6 +92,9 @@ export class Store {
       );
       await c.query(
         await readFile(new URL("./0003.sql", import.meta.url), "utf8"),
+      );
+      await c.query(
+        await readFile(new URL("./0004.sql", import.meta.url), "utf8"),
       );
     });
   }
@@ -131,6 +141,94 @@ export class Store {
       this.lock = undefined;
     }
     await this.pool.end();
+  }
+  async maintenance(options: RetentionOptions = {}) {
+    const policy = retentionSchema.parse(options);
+    return this.transaction(async (c) => {
+      const lock = await c.query(
+        "SELECT pg_try_advisory_xact_lock(1760502048) AS acquired",
+      );
+      if (!lock.rows[0].acquired)
+        return {
+          dryRun: policy.dryRun,
+          busy: true,
+          dialogIds: [] as string[],
+          dialogs: 0,
+          commands: 0,
+          sessions: 0,
+          loginAttempts: 0,
+        };
+      const history =
+        policy.historyDays > 0
+          ? await c.query(
+              "SELECT d.id FROM dialogs d WHERE d.updated_at < now()-$1::integer*interval '1 day' AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.dialog_id=d.id AND r.status IN ('queued','running')) ORDER BY d.updated_at LIMIT $2 FOR UPDATE OF d SKIP LOCKED",
+              [policy.historyDays, policy.batchSize],
+            )
+          : { rows: [] };
+      const dialogIds: string[] = history.rows.map((row) => row.id);
+      const commands =
+        policy.commandDays > 0
+          ? await c.query(
+              "SELECT c.user_id,c.id FROM commands c WHERE c.created_at < now()-$1::integer*interval '1 day' AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.status IN ('queued','running') AND (r.id::text=c.result->>'runId' OR r.dialog_id::text IN (c.result->>'dialogId',c.result->>'generationId'))) ORDER BY c.created_at LIMIT $2 FOR UPDATE OF c SKIP LOCKED",
+              [policy.commandDays, policy.batchSize],
+            )
+          : { rows: [] };
+      const sessions = await c.query(
+        "SELECT hash FROM sessions WHERE expires_at<now() ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED",
+        [policy.batchSize],
+      );
+      const attempts = await c.query(
+        "SELECT hash FROM login_attempts WHERE expires_at<now() ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED",
+        [policy.batchSize],
+      );
+      if (!policy.dryRun) {
+        if (dialogIds.length) {
+          // Keep deduplication tombstones so a retry cannot resurrect a purged job.
+          await c.query(
+            "UPDATE commands SET expired=true,result='{\"expired\":true}' WHERE COALESCE(result->>'dialogId',result->>'generationId')=ANY($1::text[]) OR result->>'runId' IN (SELECT id::text FROM runs WHERE dialog_id=ANY($1::uuid[]))",
+            [dialogIds],
+          );
+          await c.query(
+            "DELETE FROM tool_calls WHERE run_id IN (SELECT id FROM runs WHERE dialog_id=ANY($1::uuid[]))",
+            [dialogIds],
+          );
+          await c.query(
+            "DELETE FROM messages WHERE dialog_id=ANY($1::uuid[])",
+            [dialogIds],
+          );
+          await c.query(
+            "DELETE FROM dialog_events WHERE dialog_id=ANY($1::uuid[])",
+            [dialogIds],
+          );
+          await c.query("DELETE FROM runs WHERE dialog_id=ANY($1::uuid[])", [
+            dialogIds,
+          ]);
+          await c.query("DELETE FROM dialogs WHERE id=ANY($1::uuid[])", [
+            dialogIds,
+          ]);
+        }
+        if (commands.rows.length)
+          await c.query(
+            "DELETE FROM commands c USING jsonb_to_recordset($1::jsonb) AS entry(user_id text,id uuid) WHERE c.user_id=entry.user_id AND c.id=entry.id",
+            [JSON.stringify(commands.rows)],
+          );
+        await c.query("DELETE FROM sessions WHERE hash=ANY($1::text[])", [
+          sessions.rows.map((row) => row.hash),
+        ]);
+        await c.query("DELETE FROM login_attempts WHERE hash=ANY($1::text[])", [
+          attempts.rows.map((row) => row.hash),
+        ]);
+      }
+      return {
+        dryRun: policy.dryRun,
+        busy: false,
+        dialogIds,
+        dialogs: dialogIds.length,
+        commands: commands.rows.length,
+        sessions: sessions.rows.length,
+        loginAttempts: attempts.rows.length,
+      };
+    });
   }
   async list(userId: string) {
     return this.db
@@ -200,7 +298,7 @@ export class Store {
     runId?: string,
   ) {
     const { rows } = await c.query(
-      "UPDATE dialogs SET seq=seq+1 WHERE id=$1 RETURNING seq",
+      "UPDATE dialogs SET seq=seq+1,updated_at=now() WHERE id=$1 RETURNING seq",
       [id],
     );
     await c.query(
@@ -239,6 +337,12 @@ export class Store {
     );
     if (rows[0] && rows[0].hash !== fingerprint)
       throw new AppError(409, "command_conflict");
+    if (rows[0]?.expired)
+      throw new AppError(
+        410,
+        "command_expired",
+        "Результат этой команды удалён по сроку хранения.",
+      );
     return rows[0]?.result;
   }
   private async record(
@@ -248,13 +352,27 @@ export class Store {
     fingerprint: string,
     result: unknown,
   ) {
-    await c.query("INSERT INTO commands VALUES($1,$2,$3,$4)", [
-      userId,
-      id,
-      fingerprint,
-      JSON.stringify(result),
-    ]);
+    await c.query(
+      "INSERT INTO commands(user_id,id,hash,result) VALUES($1,$2,$3,$4)",
+      [userId, id, fingerprint, JSON.stringify(result)],
+    );
     return result;
+  }
+  private async queueCapacity(c: Client, userId: string) {
+    // Both admission routes and all users share this database-wide critical section.
+    await c.query("SELECT pg_advisory_xact_lock(1760502047)");
+    const { rows } = await c.query(
+      "SELECT count(*)::int AS total, count(*) FILTER (WHERE d.user_id=$1)::int AS owned FROM runs r JOIN dialogs d ON d.id=r.dialog_id WHERE r.status IN ('queued','running')",
+      [userId],
+    );
+    if (rows[0].owned >= this.maxUserPendingRuns)
+      throw new AppError(429, "queue_limit");
+    if (rows[0].total >= this.maxPendingRuns)
+      throw new AppError(
+        429,
+        "global_queue_limit",
+        "Сервер занят. Повторите запрос позже.",
+      );
   }
   async create(userId: string, commandId: string) {
     return this.transaction(async (c) => {
@@ -296,11 +414,7 @@ export class Store {
           throw new AppError(409, "ui_inactive");
         validateAction(dialog.ui, revision ?? -1, input.action);
       }
-      const waiting = await c.query(
-        "SELECT count(*)::int AS count FROM runs r JOIN dialogs d ON d.id=r.dialog_id WHERE r.status IN ('queued','running') AND d.user_id=$1",
-        [userId],
-      );
-      if (waiting.rows[0].count >= 10) throw new AppError(429, "queue_limit");
+      await this.queueCapacity(c, userId);
       const runId = randomUUID();
       await c.query(
         "INSERT INTO runs(id,dialog_id,status,generation,input) VALUES($1,$2,'queued',$3,$4)",
@@ -330,11 +444,7 @@ export class Store {
         await this.owned(c, replay.generationId, userId);
         return replay;
       }
-      const count = await c.query(
-        "SELECT count(*)::int AS count FROM runs r JOIN dialogs d ON d.id=r.dialog_id WHERE r.status IN ('queued','running') AND d.user_id=$1",
-        [userId],
-      );
-      if (count.rows[0].count >= 10) throw new AppError(429, "queue_limit");
+      await this.queueCapacity(c, userId);
       const id = randomUUID(),
         runId = randomUUID();
       await c.query(
@@ -412,7 +522,13 @@ export class Store {
           run.dialogId,
         ])
       ).rows[0];
-      const ui = applyUi(row.ui, messages, row.catalog?.document);
+      const snapshot = row.catalog ?? this.catalog!;
+      const ui = applyUi(
+        row.ui,
+        messages,
+        snapshot.document,
+        catalogModel(snapshot, this.catalogProfiles),
+      );
       await c.query("UPDATE dialogs SET ui=$2 WHERE id=$1", [run.dialogId, ui]);
       if (ui.revision !== row.ui.revision)
         await this.event(c, run.dialogId, "ui.updated", { ui }, run.id);

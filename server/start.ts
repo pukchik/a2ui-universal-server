@@ -12,6 +12,8 @@ export async function startServer(config: Config, options: StartOptions) {
   const store = options.store ?? new Store(config.DATABASE_URL);
   let built: Awaited<ReturnType<typeof buildApp>> | undefined;
   let closing: Promise<void> | undefined;
+  let maintenanceTimer: ReturnType<typeof setInterval> | undefined;
+  let maintenanceTask: Promise<unknown> | undefined;
   const signal = () => {
     void close().catch((error) => {
       console.error(
@@ -25,9 +27,11 @@ export async function startServer(config: Config, options: StartOptions) {
     (closing ??= (async () => {
       process.removeListener("SIGINT", signal);
       process.removeListener("SIGTERM", signal);
+      clearInterval(maintenanceTimer);
       try {
         await built?.app.close();
       } finally {
+        await maintenanceTask;
         await store.close();
       }
     })());
@@ -51,6 +55,22 @@ export async function startServer(config: Config, options: StartOptions) {
       process.once("SIGTERM", signal);
     }
     built.engine.start();
+    if (config.MAINTENANCE_INTERVAL_MS > 0) {
+      maintenanceTimer = setInterval(() => {
+        if (closing || maintenanceTask) return;
+        maintenanceTask = store
+          .maintenance({
+            historyDays: config.HISTORY_RETENTION_DAYS,
+            commandDays: config.COMMAND_RETENTION_DAYS,
+            dryRun: false,
+          })
+          .catch(() => built!.app.log.error("Maintenance failed"))
+          .finally(() => {
+            maintenanceTask = undefined;
+          });
+      }, config.MAINTENANCE_INTERVAL_MS);
+      maintenanceTimer.unref();
+    }
     return { ...built, close };
   } catch (error) {
     await close();

@@ -11,7 +11,10 @@ import { Store } from "../server/storage/store.ts";
 const database = process.env.TEST_DATABASE_URL;
 describe.skipIf(!database)("application integration", () => {
   let server: Awaited<ReturnType<typeof startServer>>;
-  const config = configFrom({ DATABASE_URL: database, AUTH_MODE: "custom" });
+  const config = configFrom({
+    DATABASE_URL: database ?? "postgres://unused/unused",
+    AUTH_MODE: "custom",
+  });
   config.PORT = 0;
   let origin: string;
   let alice: { cookie: string; csrf: string };

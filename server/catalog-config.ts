@@ -7,6 +7,10 @@ import {
   remoteCatalog,
   mcpCatalog,
 } from "../packages/catalogs/src/index.ts";
+import { catalogModel } from "./catalog-profile.ts";
+import type { CatalogProfile } from "./catalog-profile.ts";
+import { compileComponentSchemas } from "../catalog/index.ts";
+import type { ComponentCatalog } from "../catalog/index.ts";
 const sourceSchema = z
   .object({
     name: z.string(),
@@ -18,7 +22,10 @@ const sourceSchema = z
     tokenEnv: z.string().optional(),
   })
   .strict();
-export async function configuredCatalog(path: string) {
+export async function configuredCatalog(
+  path: string,
+  profiles: readonly CatalogProfile[] = [],
+) {
   const source = sourceSchema.parse(JSON.parse(await readFile(path, "utf8")));
   const registry = new CatalogRegistry();
   const credential = source.tokenEnv ? process.env[source.tokenEnv] : undefined;
@@ -42,10 +49,16 @@ export async function configuredCatalog(path: string) {
   }
   const catalog = await registry.get(source.name);
   const builtin = await defaultCatalog();
-  // This client has one renderer profile. An arbitrary catalog needs a matching renderer first.
-  if (catalog.id !== builtin.id || catalog.digest !== builtin.digest)
+  if (
+    !profiles.length &&
+    (catalog.id !== builtin.id || catalog.digest !== builtin.digest)
+  )
     throw new Error(
       "Каталог не соответствует закреплённому профилю рендерера. Подключите совместимый профиль клиента и валидатора.",
     );
+  compileComponentSchemas(
+    catalog.document as ComponentCatalog,
+    catalogModel(catalog, profiles),
+  );
   return catalog;
 }

@@ -14,10 +14,12 @@ import type { AuthProvider } from "./auth.ts";
 import { registerMcp } from "./mcp.ts";
 import { configuredCatalog } from "./catalog-config.ts";
 import { defaultCatalog } from "../packages/catalogs/src/index.ts";
+import { catalogModel } from "./catalog-profile.ts";
+import type { CatalogProfile } from "./catalog-profile.ts";
+import { compileComponentSchemas } from "../catalog/index.ts";
+import type { ComponentCatalog } from "../catalog/index.ts";
 import { AppError } from "../packages/core/src/errors.ts";
 import {
-  CATALOG_ID,
-  PROFILE,
   createDialogSchema,
   messageSchema,
   actionSchema,
@@ -28,6 +30,7 @@ export type AppOptions = {
   adapter: Adapter;
   adapterName?: string;
   auth?: AuthProvider;
+  catalogs?: readonly CatalogProfile[];
   tools?: ToolRegistry;
   instructions?: string;
   webRoot?: string;
@@ -44,9 +47,29 @@ export async function buildApp(config: Config, options: AppOptions) {
     loggerInstance: undefined,
   });
   const store = options.store ?? new Store(config.DATABASE_URL);
+  store.maxPendingRuns = config.MAX_PENDING_RUNS;
+  store.maxUserPendingRuns = config.MAX_USER_PENDING_RUNS;
+  store.catalogProfiles = options.catalogs ?? [];
+  const keys = store.catalogProfiles.map(
+    (entry) => `${entry.snapshot.id}\n${entry.snapshot.profile}`,
+  );
+  if (new Set(keys).size !== keys.length)
+    throw new Error("Повторяющийся id/profile каталога");
+  for (const entry of store.catalogProfiles)
+    compileComponentSchemas(
+      entry.snapshot.document as ComponentCatalog,
+      entry.model,
+    );
   store.catalog ??= config.CATALOG_SOURCE_CONFIG
-    ? await configuredCatalog(config.CATALOG_SOURCE_CONFIG)
-    : await defaultCatalog();
+    ? await configuredCatalog(
+        config.CATALOG_SOURCE_CONFIG,
+        store.catalogProfiles,
+      )
+    : (store.catalogProfiles[0]?.snapshot ?? (await defaultCatalog()));
+  compileComponentSchemas(
+    store.catalog.document as ComponentCatalog,
+    catalogModel(store.catalog, store.catalogProfiles),
+  );
   const engine = new Engine(
     store,
     options.adapter,
@@ -142,8 +165,8 @@ export async function buildApp(config: Config, options: AppOptions) {
       return {
         ...result,
         protocol: "v0.9.1",
-        catalogId: result.dialog.catalog?.id ?? CATALOG_ID,
-        profile: PROFILE,
+        catalogId: result.dialog.catalog?.id ?? store.catalog!.id,
+        profile: result.dialog.catalog?.profile ?? store.catalog!.profile,
       };
     },
   );
@@ -169,8 +192,8 @@ export async function buildApp(config: Config, options: AppOptions) {
   app.get("/health", async () => ({ ok: true, version: "0.1.0" }));
   app.get("/v1/config", async () => ({
     protocol: "v0.9.1",
-    catalogId: CATALOG_ID,
-    profile: PROFILE,
+    catalogId: store.catalog!.id,
+    profile: store.catalog!.profile,
     adapter: adapterName,
   }));
   app.get("/v1/dialogs", async (req) =>
@@ -196,15 +219,18 @@ export async function buildApp(config: Config, options: AppOptions) {
   app.get<{ Params: { id: string } }>(
     "/v1/dialogs/:id/snapshot",
     { schema: { params } },
-    async (req) => ({
-      ...(await store.snapshot(
+    async (req) => {
+      const result = await store.snapshot(
         req.params.id,
         (await auth.requireUser(req)).userId,
-      )),
-      protocol: "v0.9.1",
-      catalogId: CATALOG_ID,
-      profile: PROFILE,
-    }),
+      );
+      return {
+        ...result,
+        protocol: "v0.9.1",
+        catalogId: result.dialog.catalog?.id ?? store.catalog!.id,
+        profile: result.dialog.catalog?.profile ?? store.catalog!.profile,
+      };
+    },
   );
   app.get<{ Params: { id: string } }>(
     "/v1/dialogs/:id/messages",
