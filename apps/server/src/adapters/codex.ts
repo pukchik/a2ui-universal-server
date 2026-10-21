@@ -1,18 +1,43 @@
-import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, writeFile, readFile, stat } from "node:fs/promises";
+import { Codex } from "@openai/codex-sdk";
+import { mkdir, mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { AppError } from "../../../../packages/core/src/errors.ts";
 import { preparePrompt } from "../prompt.ts";
-import type { AgentAdapter, AgentContext, AgentOutput } from "./types.ts";
+import type { AgentAdapter, AgentOutput } from "./types.ts";
 export type CodexOptions = {
   executable: string;
   profileDir: string;
   model?: string;
   runtimeDir?: string;
-  prefixArgs?: string[];
   maxBytes?: number;
 };
+const outputSchema = {
+  type: "object",
+  properties: { text: { type: "string" }, a2uiJson: { type: "string" } },
+  required: ["text", "a2uiJson"],
+  additionalProperties: false,
+};
+async function waitForProcess(dir: string) {
+  // SDK generator cleanup sends SIGTERM but does not await the CLI process tree.
+  for (let attempt = 0; attempt < 200; attempt++) {
+    let state;
+    try {
+      state = await readFile(join(dir, "process.json"), "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    if (state.includes('"done":true')) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new AppError(
+    502,
+    "codex_shutdown",
+    "Процесс Codex не подтвердил остановку.",
+  );
+}
 export function codexAdapter(options: CodexOptions): AgentAdapter {
   return {
     kind: "agent",
@@ -22,188 +47,130 @@ export function codexAdapter(options: CodexOptions): AgentAdapter {
       await mkdir(base, { recursive: true, mode: 0o700 });
       const dir = await mkdtemp(join(base, "run-"));
       const schema = join(dir, "output.schema.json");
-      const output = join(dir, "output.json");
-      await writeFile(
-        schema,
-        JSON.stringify({
-          type: "object",
-          properties: {
-            text: { type: "string" },
-            a2uiJson: { type: "string" },
-          },
-          required: ["text", "a2uiJson"],
-          additionalProperties: false,
-        }),
-        { mode: 0o600 },
-      );
-      const args = [
-        ...(options.prefixArgs ?? []),
-        "exec",
-        "--ignore-user-config",
-        "--ignore-rules",
-        "--json",
-        "--ephemeral",
-        "--skip-git-repo-check",
-        "--sandbox",
-        "read-only",
-        "--output-schema",
-        schema,
-        "--output-last-message",
-        output,
-        "--cd",
-        dir,
-        "-c",
-        'approval_policy="never"',
-        "-c",
-        "features.shell_tool=false",
-        "-c",
-        "features.multi_agent=false",
-        "-c",
-        "features.js_repl=false",
-        "-c",
-        "features.apps=false",
-        "-c",
-        'web_search="disabled"',
-      ];
-      if (options.model) args.push("--model", options.model);
-      if (!context.repair)
-        args.push(
-          "-c",
-          `mcp_servers.project.url=${JSON.stringify(context.toolUrl)}`,
-          "-c",
-          'mcp_servers.project.bearer_token_env_var="A2UI_RUN_TOKEN"',
-          "-c",
-          "mcp_servers.project.required=true",
-        );
-      args.push("-");
-      const env: NodeJS.ProcessEnv = {
-        PATH: process.env.PATH,
-        LANG: "C.UTF-8",
-        CODEX_HOME: resolve(options.profileDir),
-        A2UI_RUN_TOKEN: context.repair ? undefined : context.token,
-      };
-      // Never inherit SQL credentials, unrelated tokens or the developer's shell environment.
-      const child = spawn(options.executable, args, {
-        cwd: dir,
-        env,
-        detached: process.platform !== "win32",
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-      let bytes = 0,
-        buffer = "",
-        stderr = "",
-        failure: Error | undefined,
-        killTimer: ReturnType<typeof setTimeout> | undefined;
-      const kill = (force = false) => {
-        if (child.pid)
-          try {
-            process.kill(
-              process.platform === "win32" ? child.pid : -child.pid,
-              force ? "SIGKILL" : "SIGTERM",
-            );
-          } catch {}
-      };
-      const stop = () => {
-        kill();
-        killTimer ??= setTimeout(() => kill(true), 1500);
-        killTimer.unref();
-      };
-      const abort = () => {
-        failure = new AppError(409, "cancelled");
-        stop();
-      };
+      // The launcher passes this schema to CLI; the SDK has no ephemeral/ignore-config flags.
+      await writeFile(schema, JSON.stringify(outputSchema), { mode: 0o600 });
+      const controller = new AbortController();
+      const abort = () => controller.abort(signal.reason);
       signal.addEventListener("abort", abort, { once: true });
       if (signal.aborted) abort();
-      const consume = (chunk: Buffer) => {
-        bytes += chunk.length;
-        if (bytes > (options.maxBytes ?? 512000)) {
-          failure = new AppError(422, "cli_output_limit");
-          stop();
-          return;
-        }
-        buffer += chunk.toString("utf8");
-        let newline;
-        while ((newline = buffer.indexOf("\n")) >= 0) {
-          const line = buffer.slice(0, newline);
-          buffer = buffer.slice(newline + 1);
-          if (!line.trim()) continue;
-          try {
-            const event = JSON.parse(line);
-            if (event.type === "turn.failed" || event.type === "error")
-              failure = new AppError(
-                502,
-                "codex_failed",
-                "Codex завершился с ошибкой. Проверьте авторизацию и доступность модели.",
-              );
+      try {
+        const codex = new Codex({
+          codexPathOverride: fileURLToPath(
+            new URL("./codex-process.mjs", import.meta.url),
+          ),
+          env: {
+            PATH: process.env.PATH ?? "",
+            LANG: "C.UTF-8",
+            CODEX_HOME: resolve(options.profileDir),
+            A2UI_CODEX_BIN: options.executable,
+            A2UI_CODEX_DIR: dir,
+            A2UI_CODEX_SCHEMA: schema,
+            A2UI_CODEX_MAX_BYTES: String(options.maxBytes ?? 512000),
+            ...(!context.repair ? { A2UI_RUN_TOKEN: context.token } : {}),
+          },
+          config: {
+            features: {
+              shell_tool: false,
+              multi_agent: false,
+              js_repl: false,
+              apps: false,
+            },
+            ...(!context.repair
+              ? {
+                  mcp_servers: {
+                    project: {
+                      url: context.toolUrl,
+                      bearer_token_env_var: "A2UI_RUN_TOKEN",
+                      required: true,
+                    },
+                  },
+                }
+              : {}),
+          },
+        });
+        const thread = codex.startThread({
+          model: options.model,
+          workingDirectory: dir,
+          skipGitRepoCheck: true,
+          sandboxMode: "read-only",
+          approvalPolicy: "never",
+          webSearchMode: "disabled",
+        });
+        const { events } = await thread.runStreamed(preparePrompt(context), {
+          signal: controller.signal,
+        });
+        let response = "";
+        let completed = false;
+        for await (const event of events) {
+          if (signal.aborted) throw signal.reason;
+          if (event.type === "turn.failed" || event.type === "error")
+            throw new AppError(
+              502,
+              "codex_failed",
+              "Codex завершился с ошибкой. Проверьте авторизацию и доступность модели.",
+            );
+          if ("item" in event) {
             if (
               ["command_execution", "file_change", "web_search"].includes(
-                event.item?.type,
+                event.item.type,
               )
-            ) {
-              failure = new AppError(
+            )
+              throw new AppError(
                 502,
                 "unexpected_tool",
                 "Codex попытался использовать инструмент вне MCP проекта.",
               );
-              stop();
-            }
-          } catch {
-            failure = new AppError(502, "invalid_jsonl");
-            stop();
+            if (
+              event.item.type === "mcp_tool_call" &&
+              (context.repair || event.item.server !== "project")
+            )
+              throw new AppError(
+                502,
+                "unexpected_tool",
+                "Codex обратился к недопустимому MCP.",
+              );
+            if (
+              event.type === "item.completed" &&
+              event.item.type === "agent_message"
+            )
+              response = event.item.text;
           }
+          if (event.type === "turn.completed") completed = true;
         }
-      };
-      child.stdout.on("data", consume);
-      child.stderr.on("data", (chunk: Buffer) => {
-        stderr = (stderr + chunk.toString("utf8")).slice(-2048);
-      });
-      child.stdin.on("error", () => {});
-      child.stdin.end(preparePrompt(context));
-      try {
-        const code = await new Promise<number | null>((resolve, reject) => {
-          child.once("error", reject);
-          child.once("close", resolve);
-        });
-        if (buffer.trim()) {
-          failure ??= new AppError(
-            502,
-            "invalid_jsonl",
-            "Оборванный поток событий Codex.",
-          );
-        }
-        if (signal.aborted) throw signal.reason;
-        if (failure) throw failure;
-        if (code !== 0)
-          throw new AppError(
-            502,
-            "codex_exit",
-            `Codex завершился с кодом ${code}. Проверьте служебную авторизацию CLI.`,
-          );
-        if ((await stat(output)).size > 128000)
+        if (!completed || !response)
+          throw new AppError(502, "missing_agent_output");
+        if (Buffer.byteLength(response) > 128000)
           throw new AppError(422, "agent_output_limit");
-        const value = JSON.parse(await readFile(output, "utf8")) as AgentOutput;
+        const value: unknown = JSON.parse(response);
         if (
+          !value ||
+          typeof value !== "object" ||
+          !("text" in value) ||
+          !("a2uiJson" in value) ||
           typeof value.text !== "string" ||
           typeof value.a2uiJson !== "string" ||
-          value.text.length > 12000
+          value.text.length > 12000 ||
+          Object.keys(value).some((key) => !["text", "a2uiJson"].includes(key))
         )
           throw new AppError(422, "invalid_agent_output");
-        return value;
+        return value as AgentOutput;
       } catch (error) {
         if (signal.aborted) throw signal.reason;
         if (error instanceof AppError) throw error;
+        if (
+          error instanceof Error &&
+          /Codex Exec exited with code 73:/.test(error.message)
+        )
+          throw new AppError(422, "cli_output_limit");
+        // SDK errors may include CLI stderr or raw events: never expose those to the client.
         throw new AppError(
           502,
           "codex_process",
-          error instanceof Error && "code" in error
-            ? `Ошибка процесса Codex: ${error.code}`
-            : "Не удалось получить итоговый ответ Codex.",
+          "Не удалось получить итоговый ответ Codex. Проверьте служебную авторизацию CLI.",
         );
       } finally {
         signal.removeEventListener("abort", abort);
-        if (killTimer) clearTimeout(killTimer);
-        kill(true);
-        void stderr;
+        await waitForProcess(dir);
       }
     },
   };
