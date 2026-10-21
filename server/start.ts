@@ -15,13 +15,20 @@ export async function startServer(config: Config, options: StartOptions) {
   let maintenanceTimer: ReturnType<typeof setInterval> | undefined;
   let maintenanceTask: Promise<unknown> | undefined;
   const signal = () => {
-    void close().catch((error) => {
-      console.error(
-        "shutdown:",
-        error instanceof Error ? error.message : "error",
-      );
-      process.exitCode = 1;
-    });
+    void close()
+      .catch((error) => {
+        console.error(
+          "shutdown:",
+          error instanceof Error ? error.message : "error",
+        );
+        process.exitCode = 1;
+      })
+      .then(() => {
+        // A handler that ignored abort may leave timers or sockets behind.
+        // Embedded applications own process termination via handleSignals:false.
+        if (options.handleSignals !== false)
+          process.exit(process.exitCode ?? 0);
+      });
   };
   const close = (): Promise<void> =>
     (closing ??= (async () => {

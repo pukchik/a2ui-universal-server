@@ -8,6 +8,52 @@ import type { Json, Run } from "../packages/contracts/src/index.ts";
 import { AppError } from "../packages/core/src/errors.ts";
 import { safeJson } from "../packages/core/src/ui.ts";
 const digest = (v: string) => createHash("sha256").update(v).digest("hex");
+
+// Stop waiting for an uncooperative async operation; always observe its late rejection.
+function abortable<T>(
+  signal: AbortSignal,
+  operation: () => T | PromiseLike<T>,
+  graceMs = () => 0,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+    };
+    const abort = () => {
+      const delay = graceMs();
+      if (delay > 0)
+        timer = setTimeout(() => {
+          cleanup();
+          reject(signal.reason);
+        }, delay);
+      else {
+        cleanup();
+        reject(signal.reason);
+      }
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    Promise.resolve()
+      .then(() => {
+        signal.throwIfAborted();
+        return operation();
+      })
+      .then(
+        (result) => {
+          cleanup();
+          if (signal.aborted) reject(signal.reason);
+          else resolve(result);
+        },
+        (error) => {
+          cleanup();
+          reject(signal.aborted ? signal.reason : error);
+        },
+      );
+  });
+}
+
 export class Engine {
   catalog?: CatalogSnapshot;
   instructions = "";
@@ -76,9 +122,9 @@ export class Engine {
     for (const [key, value] of this.tokens)
       if (value.run.id === id) this.tokens.delete(key);
   }
-  cancel(id: string) {
+  cancel(id: string, reason = new AppError(409, "cancelled")) {
     this.revoke(id);
-    this.active.get(id)?.controller.abort(new AppError(409, "cancelled"));
+    this.active.get(id)?.controller.abort(reason);
   }
   authorize(token: string): Run {
     const entry = this.tokens.get(digest(token));
@@ -102,29 +148,37 @@ export class Engine {
     if (start.cached) return start.result;
     try {
       signal.throwIfAborted();
-      const result = (await tool.execute(
-        parsed.data as never,
-        Object.freeze({
-          userId,
-          dialogId: run.dialogId,
-          runId: run.id,
-          signal,
-        }),
+      const result = (await abortable(signal, () =>
+        tool.execute(
+          parsed.data as never,
+          Object.freeze({
+            userId,
+            dialogId: run.dialogId,
+            runId: run.id,
+            signal,
+          }),
+        ),
       )) as Json;
       signal.throwIfAborted();
       await this.store.toolEnd(run, id, result);
       return result;
     } catch (e) {
-      await this.store.toolEnd(
-        run,
-        id,
-        { error: "Источник не вернул результат" },
-        true,
-      );
-      throw e;
+      // The run's terminal transaction records aborted tools. Never write after a
+      // detached operation settles or after shutdown has closed the database.
+      if (!signal.aborted)
+        await this.store.toolEnd(
+          run,
+          id,
+          { error: "Источник не вернул результат" },
+          true,
+        );
+      throw signal.aborted ? signal.reason : e;
     }
   }
   private async execute(run: Run, controller: AbortController) {
+    const revoke = () => this.revoke(run.id);
+    controller.signal.addEventListener("abort", revoke, { once: true });
+    const deadline = Date.now() + this.timeoutMs;
     const timer = setTimeout(
       () =>
         controller.abort(
@@ -133,6 +187,7 @@ export class Engine {
       this.timeoutMs,
     );
     try {
+      controller.signal.throwIfAborted();
       const { rows } = await this.store.pool.query(
         "SELECT user_id FROM dialogs WHERE id=$1",
         [run.dialogId],
@@ -148,10 +203,11 @@ export class Engine {
           "context_limit",
           "Контекст слишком большой. Начните новый диалог.",
         );
+      controller.signal.throwIfAborted();
       const token = randomBytes(32).toString("base64url");
       this.tokens.set(digest(token), {
         run,
-        expires: Date.now() + this.timeoutMs,
+        expires: deadline,
       });
       const context: AgentContext = {
         run: structuredClone(run),
@@ -170,11 +226,10 @@ export class Engine {
         results.push({ name, args, result });
         return result;
       };
-      const output = await runAdapter(
-        this.adapter,
-        context,
-        call,
+      const output = await abortable(
         controller.signal,
+        () => runAdapter(this.adapter, context, call, controller.signal),
+        () => (this.stopping ? 2000 : 0),
       );
       if (controller.signal.aborted) throw controller.signal.reason;
       try {
@@ -195,19 +250,24 @@ export class Engine {
           "SELECT name,args,result FROM tool_calls WHERE run_id=$1 AND status='succeeded'",
           [run.id],
         );
-        const repaired = await runAdapter(
-          this.adapter,
-          {
-            ...context,
-            token: "",
-            repair: {
-              output: JSON.stringify(output),
-              error: error instanceof Error ? error.message : "invalid_ui",
-              results: calls.rows,
-            },
-          },
-          () => Promise.reject(new AppError(403, "repair_tools_disabled")),
+        const repaired = await abortable(
           controller.signal,
+          () =>
+            runAdapter(
+              this.adapter,
+              {
+                ...context,
+                token: "",
+                repair: {
+                  output: JSON.stringify(output),
+                  error: error instanceof Error ? error.message : "invalid_ui",
+                  results: calls.rows,
+                },
+              },
+              () => Promise.reject(new AppError(403, "repair_tools_disabled")),
+              controller.signal,
+            ),
+          () => (this.stopping ? 2000 : 0),
         );
         if (controller.signal.aborted) throw controller.signal.reason;
         await this.store.complete(
@@ -230,6 +290,7 @@ export class Engine {
       await this.store.fail(run, code, message);
     } finally {
       clearTimeout(timer);
+      controller.signal.removeEventListener("abort", revoke);
     }
   }
   async stop() {
@@ -237,7 +298,11 @@ export class Engine {
     if (this.timer) clearInterval(this.timer);
     while (this.pumping)
       await new Promise((resolve) => setTimeout(resolve, 10));
-    for (const [id] of this.active) this.cancel(id);
+    for (const [id] of this.active)
+      this.cancel(
+        id,
+        new AppError(503, "interrupted", "Сервер останавливается"),
+      );
     await Promise.allSettled([...this.active.values()].map((v) => v.task));
   }
 }

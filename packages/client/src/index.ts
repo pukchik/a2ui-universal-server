@@ -20,11 +20,20 @@ export class Client {
         : {},
       body: body ? JSON.stringify(body) : undefined,
     });
-    const result = await response.json();
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      throw new ApiError(
+        response.ok ? "invalid_response" : "http_error",
+        response.ok ? "Сервер вернул некорректный JSON" : "Ошибка HTTP-сервера",
+        response.status,
+      );
+    }
     if (!response.ok)
       throw new ApiError(
-        result.error?.code ?? "http_error",
-        result.error?.message ?? "Ошибка сервера",
+        result?.error?.code ?? "http_error",
+        result?.error?.message ?? "Ошибка сервера",
         response.status,
       );
     return result as T;
@@ -35,7 +44,10 @@ export class Client {
   ): Promise<T> {
     if (this.pending)
       throw new Error("Сначала повторите отправку предыдущей команды.");
-    this.pending = { path, body: { ...body, commandId: crypto.randomUUID() } };
+    this.pending = {
+      path,
+      body: structuredClone({ ...body, commandId: crypto.randomUUID() }),
+    };
     return this.retry<T>();
   }
   async retry<T>(): Promise<T> {
@@ -43,10 +55,18 @@ export class Client {
     const command = this.pending;
     try {
       const result = await this.request<T>(command.path, command.body);
-      this.pending = undefined;
+      if (this.pending === command) this.pending = undefined;
       return result;
     } catch (e) {
-      if (e instanceof ApiError) this.pending = undefined;
+      // 5xx, transport failures and 408 do not prove the command was rejected.
+      if (
+        this.pending === command &&
+        e instanceof ApiError &&
+        e.status >= 400 &&
+        e.status < 500 &&
+        e.status !== 408
+      )
+        this.pending = undefined;
       throw e;
     }
   }

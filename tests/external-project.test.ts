@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { transpileModule, ModuleKind, ScriptTarget } from "typescript";
 
-it.skipIf(!process.env.TEST_DATABASE_URL)(
-  "runs the notes application outside the server checkout",
-  async () => {
+it.skipIf(!process.env.TEST_DATABASE_URL).each(["normal", "hung"])(
+  "runs the %s application outside the checkout and exits cleanly on SIGTERM",
+  async (mode) => {
     const directory = await mkdtemp(join(tmpdir(), "a2ui-external-project-"));
     const sourceUrl = new URL("../examples/notes/app.ts", import.meta.url);
     const source = (await readFile(sourceUrl, "utf8")).replace(
@@ -37,7 +37,16 @@ import { startServer, configFrom } from ${JSON.stringify(serverUrl)};
 import { notesOptions } from "./application.mjs";
 const config = configFrom({ ...process.env, AUTH_MODE: "custom" });
 config.PORT = 0;
-const server = await startServer(config, { ...notesOptions(), handleSignals: true });
+const options = notesOptions();
+if (process.env.A2UI_TEST_HANG === "1") options.adapter = {
+  kind: "agent",
+  async run() {
+    setInterval(() => {}, 1000);
+    console.log("HUNG_HANDLER_ENTERED");
+    return new Promise(() => {});
+  },
+};
+const server = await startServer(config, { ...options, handleSignals: true });
 const address = server.app.server.address();
 config.PUBLIC_URL = "http://localhost:" + address.port;
 console.log("READY " + JSON.stringify({ origin: config.PUBLIC_URL }));
@@ -50,10 +59,15 @@ console.log("READY " + JSON.stringify({ origin: config.PUBLIC_URL }));
         LANG: "C.UTF-8",
         DATABASE_URL: process.env.TEST_DATABASE_URL,
         NODE_NO_WARNINGS: "1",
+        A2UI_TEST_HANG: mode === "hung" ? "1" : "0",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let errors = "";
+    let output = "";
+    child.stdout.on("data", (chunk) => {
+      output = (output + chunk).slice(-8000);
+    });
     child.stderr.on("data", (chunk) => {
       errors = (errors + chunk).slice(-4000);
     });
@@ -67,9 +81,7 @@ console.log("READY " + JSON.stringify({ origin: config.PUBLIC_URL }));
           () => reject(new Error("External startup timed out: " + errors)),
           5000,
         );
-        let output = "";
         child.stdout.on("data", (chunk) => {
-          output += chunk;
           const match = output.match(/READY (.+)\n/);
           if (match) {
             clearTimeout(timeout);
@@ -121,6 +133,14 @@ console.log("READY " + JSON.stringify({ origin: config.PUBLIC_URL }));
       await request(`/v1/dialogs/${dialogId}/messages`, {
         text: "Мои заметки",
       });
+      if (mode === "hung") {
+        await expect
+          .poll(() => output.includes("HUNG_HANDLER_ENTERED"), {
+            timeout: 5000,
+          })
+          .toBe(true);
+        return;
+      }
       const first = await done();
       expect(JSON.stringify(first.dialog.ui)).toContain("Заметка Алисы");
       expect(JSON.stringify(first.dialog.ui)).not.toContain("Заметка Боба");
