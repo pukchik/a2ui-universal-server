@@ -66,7 +66,9 @@ server/
   mcp.ts             # MCP инструментов запуска
   tools.ts           # Контракт реестра инструментов
   storage/           # PostgreSQL и миграции
-  adapters/          # Codex CLI, контракты model/agent
+  adapters/
+    types.ts         # Общие контракты model/agent
+    codex/           # Адаптер Codex CLI и запуск дочернего процесса
 demo/
   server/            # Каталог ламп, fixture, инструкции и точка входа
   web/               # Lit-клиент

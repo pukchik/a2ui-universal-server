@@ -2,7 +2,7 @@ import { it, expect } from "vitest";
 import { resolve, join } from "node:path";
 import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { codexAdapter } from "../server/adapters/codex.ts";
+import { codexAdapter } from "../server/adapters/codex/index.ts";
 import type { AgentContext } from "../server/adapters/types.ts";
 const options = {
   executable: resolve("tests/fixtures/codex.mjs"),
