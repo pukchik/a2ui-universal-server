@@ -39,6 +39,20 @@ class UniserverApp extends LitElement {
   sending = false;
   stop?: () => void;
   loading = false;
+  openVersion = 0;
+  navOpen = false;
+  pane: "conversation" | "result" = "conversation";
+  selectPane(pane: "conversation" | "result") {
+    this.pane = pane;
+    this.requestUpdate();
+  }
+  messageText(text: string) {
+    return text === "Действие: search_products"
+      ? "Уточнить подборку"
+      : text === "Действие: show_product"
+        ? "Подробнее о лампе"
+        : text;
+  }
   processor = new MessageProcessor(
     [basicCatalog],
     (action) => this.action(action),
@@ -69,7 +83,7 @@ class UniserverApp extends LitElement {
           } catch (e) {
             if (!(e instanceof ApiError && e.status === 404)) throw e;
           }
-      }
+      } else this.clearView();
     } catch (e) {
       this.showError(e);
     }
@@ -78,6 +92,23 @@ class UniserverApp extends LitElement {
   showError(e: unknown) {
     this.error = e instanceof Error ? e.message : "Не удалось выполнить запрос";
     this.requestUpdate();
+  }
+  clearView() {
+    ++this.openVersion;
+    this.stop?.();
+    this.stop = undefined;
+    this.snapshot = undefined;
+    this.dialogs = [];
+    this.draft = "";
+    this.notice = "";
+    this.pane = "conversation";
+    this.navOpen = false;
+    this.processor.dispose();
+    this.processor = new MessageProcessor(
+      [basicCatalog],
+      (action) => this.action(action),
+      { version: "v0.9.1" },
+    );
   }
   get savedDialogKey() {
     return `a2ui-dialog:${this.user?.userId ?? "anonymous"}`;
@@ -116,8 +147,11 @@ class UniserverApp extends LitElement {
     );
   }
   async open(id: string, recovery = false) {
+    const version = ++this.openVersion;
+    this.navOpen = false;
     this.stop?.();
     const snapshot = await this.client.snapshot(id);
+    if (version !== this.openVersion) return;
     this.resetRenderer(snapshot);
     this.snapshot = snapshot;
     localStorage.setItem(this.savedDialogKey, id);
@@ -132,6 +166,11 @@ class UniserverApp extends LitElement {
       () => void this.checkLogin(),
     );
     this.requestUpdate();
+    void this.updateComplete.then(() => this.scrollHistory());
+  }
+  scrollHistory() {
+    const history = this.querySelector<HTMLElement>(".conversation-scroll");
+    if (history) history.scrollTop = history.scrollHeight;
   }
   async recover(id: string) {
     if (this.loading) return;
@@ -146,14 +185,26 @@ class UniserverApp extends LitElement {
   }
   event(event: Event) {
     const snapshot = this.snapshot;
-    if (!snapshot) return;
+    if (
+      !snapshot ||
+      event.dialogId !== snapshot.dialog.id ||
+      event.seq <= snapshot.throughSeq
+    )
+      return;
     const payload = event.payload as Record<string, any>;
     snapshot.throughSeq = event.seq;
     if (event.type === "ui.updated") {
+      this.pane = "result";
       snapshot.dialog.ui = payload.ui;
       this.resetRenderer(snapshot);
     }
-    if (event.type === "message.text")
+    if (
+      event.type === "message.text" &&
+      !snapshot.messages.some(
+        (message) =>
+          message.role === "assistant" && message.runId === event.runId,
+      )
+    )
       snapshot.messages.push({
         role: "assistant",
         text: payload.text,
@@ -175,14 +226,15 @@ class UniserverApp extends LitElement {
       }
     }
     this.requestUpdate();
+    if (event.type === "message.text")
+      void this.updateComplete.then(() => this.scrollHistory());
   }
   async checkLogin() {
     try {
       const user = await this.client.request<User>("/v1/session");
       if (!user.authenticated) {
-        this.stop?.();
         this.user = user;
-        this.snapshot = undefined;
+        this.clearView();
         this.requestUpdate();
       }
     } catch {}
@@ -195,6 +247,8 @@ class UniserverApp extends LitElement {
     );
   }
   async newDialog() {
+    this.pane = "conversation";
+    this.draft = "";
     await this.guarded(async () => {
       const { dialogId } = await this.client.create();
       await this.open(dialogId);
@@ -261,179 +315,370 @@ class UniserverApp extends LitElement {
       : "Готов к работе";
   }
   render() {
-    return html`<div class="layout">
-      <aside>
-        <a class="brand" href="/">a2ui<span>/ uniserver</span></a>
-        <div class="project-label">Демонстрационный каталог</div>
+    const surfaces = [...this.processor.getSurfaces().values()];
+    const authenticated = this.user?.authenticated;
+    return html`<div class="app-shell">
+      <header class="topbar">
         <button
-          class="new-dialog"
-          @click=${() => this.newDialog()}
-          ?disabled=${!this.user?.authenticated || this.busy}
+          class="menu-button secondary"
+          aria-label="Диалоги"
+          aria-controls="dialog-navigation"
+          aria-expanded=${this.navOpen}
+          @click=${() => {
+            this.navOpen = !this.navOpen;
+            this.requestUpdate();
+          }}
         >
-          ＋ Новый диалог
+          Диалоги
+        </button>
+        <a class="brand" href="/" aria-label="A2UI Uniserver — главная">
+          <svg class="brand-mark" viewBox="0 0 28 24" aria-hidden="true">
+            <path
+              d="M10 3H3v18h7M18 3h7v18h-7M8 12h12"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            />
+          </svg>
+          <span>A2UI <span class="brand-sub">/ Uniserver</span></span>
+        </a>
+        <span class="scope">Каталог ламп</span>
+        ${authenticated
+          ? html`<button
+              class="quiet account"
+              @click=${() =>
+                this.guarded(async () => {
+                  await this.client.request("/auth/logout", {});
+                  this.user = undefined;
+                  this.clearView();
+                  await this.load();
+                })}
+            >
+              Выйти
+            </button>`
+          : nothing}
+      </header>
+      <aside
+        class=${this.navOpen ? "sidebar is-open" : "sidebar"}
+        id="dialog-navigation"
+        aria-label="Сохранённые диалоги"
+      >
+        <div class="sidebar-heading">
+          <h2>Диалоги</h2>
+          <button
+            class="quiet close-menu"
+            @click=${() => {
+              this.navOpen = false;
+              this.requestUpdate();
+            }}
+          >
+            Закрыть
+          </button>
+        </div>
+        <button
+          class="new-dialog secondary"
+          @click=${() => this.newDialog()}
+          ?disabled=${!authenticated || this.busy}
+        >
+          Новый диалог
         </button>
         <nav aria-label="Диалоги">
-          ${this.dialogs.map(
-            (d) =>
-              html`<button
-                class=${this.snapshot?.dialog.id === d.id ? "selected" : ""}
-                @click=${() => this.guarded(() => this.open(d.id))}
-              >
-                ${d.title}
-              </button>`,
-          )}
+          ${this.dialogs.length
+            ? this.dialogs.map(
+                (d) =>
+                  html`<button
+                    class=${this.snapshot?.dialog.id === d.id
+                      ? "dialog-link selected"
+                      : "dialog-link"}
+                    aria-current=${this.snapshot?.dialog.id === d.id
+                      ? "page"
+                      : nothing}
+                    title=${d.title}
+                    @click=${() => this.guarded(() => this.open(d.id))}
+                  >
+                    ${d.title}
+                  </button>`,
+              )
+            : html`<p class="nav-empty">
+                ${authenticated
+                  ? "Здесь появятся ваши диалоги."
+                  : "Войдите, чтобы сохранить подборку."}
+              </p>`}
         </nav>
-        <footer>Первая версия · 0.1.0<br />Codex CLI + A2UI</footer>
+        <footer>
+          <span class="adapter-name"
+            >${this.user?.adapter === "fixture"
+              ? "Тестовый адаптер"
+              : "Codex CLI"}</span
+          >
+          <p>
+            ${this.user?.adapter === "fixture"
+              ? "Без обращений к модели"
+              : "Каталог · только чтение"}
+          </p>
+        </footer>
       </aside>
-      <main>
-        <header>
+      <main class="sheet">
+        <div class="page-heading">
           <div>
-            <span class="eyebrow">AGENT WORKSPACE</span>
-            <h1>
-              ${this.snapshot?.dialog.title ??
-              "Каталог с интерфейсом от агента"}
-            </h1>
+            <h1>Каталог</h1>
+            <p>Найдите свет для своего пространства.</p>
           </div>
-          ${this.user?.authenticated
-            ? html`<button
-                class="quiet"
-                @click=${() =>
-                  this.guarded(async () => {
-                    await this.client.request("/auth/logout", {});
-                    this.stop?.();
-                    this.user = undefined;
-                    this.snapshot = undefined;
-                    this.dialogs = [];
-                    await this.load();
-                  })}
+          <span class="connection"
+            >${this.user
+              ? this.user.adapter === "fixture"
+                ? "Локальная демка"
+                : "Codex CLI"
+              : "Подключение…"}</span
+          >
+        </div>
+        <div class="mobile-tabs" role="tablist" aria-label="Рабочая область">
+          <button
+            id="conversation-tab"
+            role="tab"
+            aria-selected=${this.pane === "conversation"}
+            aria-controls="conversation"
+            @click=${() => this.selectPane("conversation")}
+          >
+            Диалог
+          </button>
+          <button
+            id="result-tab"
+            role="tab"
+            aria-selected=${this.pane === "result"}
+            aria-controls="result"
+            @click=${() => this.selectPane("result")}
+          >
+            Результат${surfaces.length
+              ? html`<span
+                  class="result-dot"
+                  aria-label="Есть результат"
+                ></span>`
+              : nothing}
+          </button>
+        </div>
+        <div class="workbench" data-pane=${this.pane}>
+          <section
+            id="conversation"
+            class="conversation"
+            aria-label="Диалог с агентом"
+          >
+            <div class="panel-heading">
+              <h2>Диалог</h2>
+              <span class="status" role="status"
+                >${authenticated ? this.status() : "Начало работы"}</span
               >
-                Выйти
-              </button>`
-            : nothing}
-        </header>
-        ${!this.user
-          ? html`<p>Подключение…</p>`
-          : !this.user.authenticated
-            ? html`<section class="welcome">
-                <span class="tag">A2UI UNISERVER</span>
-                <h2>Начните с одного вопроса</h2>
-                <p>
-                  Агент найдёт товары и соберёт удобный интерфейс для
-                  результата. В примере используются демонстрационные данные.
-                </p>
-                ${this.user.authMode === "demo"
-                  ? html`<p class="demo-note">
-                        Локальный демо-режим. Доступен только на этом
-                        компьютере.
-                      </p>
-                      <button
-                        @click=${() =>
-                          this.guarded(async () => {
-                            await this.client.request("/auth/demo", {});
-                            await this.load();
-                          })}
-                      >
-                        Открыть демонстрацию
-                      </button>`
-                  : html`<a class="button" href="/auth/login">Войти</a>`}
-              </section>`
-            : html`<section class="workspace">
-                ${this.user.adapter === "fixture"
-                  ? html`<div class="demo-note">
-                      Тестовый адаптер. Ответы детерминированы; Codex не
-                      вызывается.
-                    </div>`
-                  : nothing}${this.snapshot?.messages.length
-                  ? html`<section class="history" aria-label="История">
-                      ${this.snapshot.messages.map(
-                        (m) =>
-                          html`<article class=${m.role}>
-                            <small
-                              >${m.role === "user"
-                                ? "Вы"
-                                : "Агент"}${m.incomplete
-                                ? " · незавершённый ответ"
-                                : ""}</small
-                            >
-                            <p>${m.text}</p>
-                          </article>`,
-                      )}
-                    </section>`
-                  : html`<div class="empty">
-                      <span class="tag">ДАННЫЕ → ИНТЕРФЕЙС</span>
-                      <h2>Что будем искать?</h2>
+            </div>
+            <div class="conversation-scroll">
+              ${!this.user
+                ? html`<div class="empty-state">
+                    <h3>Подключаемся к серверу</h3>
+                    <p>Загружаем сессию и сохранённые диалоги.</p>
+                    <button class="secondary" @click=${() => this.load()}>
+                      Повторить
+                    </button>
+                  </div>`
+                : !authenticated
+                  ? html`<div class="welcome">
+                      <h3>Какой свет вам нужен?</h3>
                       <p>
-                        Например: «Покажи компактные лампы с тёплым светом».
+                        Расскажите, где будет стоять лампа. Агент подберёт
+                        варианты и соберёт форму для уточнений.
                       </p>
-                    </div>`}
-                <div class="status" role="status">
-                  <span class=${this.busy ? "dot working" : "dot"}></span
-                  >${this.status()}${this.busy && this.snapshot?.dialog.run
-                    ? html`<button class="quiet" @click=${() => this.cancel()}>
-                        Отменить
-                      </button>`
+                      <p class="muted">
+                        Демонстрационный каталог. Покупки и изменения данных
+                        недоступны.
+                      </p>
+                      ${this.user.authMode === "demo"
+                        ? html`<button
+                              @click=${() =>
+                                this.guarded(async () => {
+                                  await this.client.request("/auth/demo", {});
+                                  await this.load();
+                                })}
+                              ?disabled=${this.busy}
+                            >
+                              Открыть демонстрацию
+                            </button>
+                            <p class="small muted">Локальный вход без OIDC.</p>`
+                        : html`<a class="button" href="/auth/login">Войти</a>`}
+                    </div>`
+                  : this.snapshot?.messages.length
+                    ? html`<section class="history" aria-label="История">
+                        ${this.snapshot.messages.map(
+                          (m) =>
+                            html`<article class=${m.role}>
+                              <span class="message-author"
+                                >${m.role === "user"
+                                  ? "Вы"
+                                  : "Агент"}${m.incomplete
+                                  ? " · ответ прерван"
+                                  : ""}</span
+                              >
+                              <p>${this.messageText(m.text)}</p>
+                            </article>`,
+                        )}
+                      </section>`
+                    : html`<div class="empty-state">
+                        <h3>Начните с задачи</h3>
+                        <p>
+                          Для чтения по вечерам, небольшого стола или уютного
+                          угла — опишите, что ищете.
+                        </p>
+                        <div class="suggestions" aria-label="Примеры запросов">
+                          ${[
+                            "Компактная лампа с тёплым светом",
+                            "Лампа для рабочего стола",
+                          ].map(
+                            (text) =>
+                              html`<button
+                                class="suggestion"
+                                @click=${() => {
+                                  this.draft = text;
+                                  this.requestUpdate();
+                                  void this.updateComplete.then(() =>
+                                    this.querySelector<HTMLTextAreaElement>(
+                                      "#message",
+                                    )?.focus(),
+                                  );
+                                }}
+                              >
+                                ${text}<span aria-hidden="true">→</span>
+                              </button>`,
+                          )}
+                        </div>
+                      </div>`}
+            </div>
+            ${authenticated
+              ? html`<div class="composer-area">
+                  ${this.user?.adapter === "fixture"
+                    ? html`<p class="demo-note">
+                        Ответы тестовые. Codex не вызывается.
+                      </p>`
                     : nothing}
-                </div>
-                ${this.snapshot?.dialog.run?.error
-                  ? html`<p class="error" role="alert">
-                      ${this.snapshot.dialog.run.error.message}
-                    </p>`
-                  : nothing}
-                <section
-                  class="surfaces"
-                  aria-label="Результат"
-                  ?inert=${this.busy ||
-                  this.snapshot?.dialog.run?.status !== "succeeded"}
-                >
-                  ${[...this.processor.getSurfaces().values()].map(
-                    (surface) =>
-                      html`<a2ui-surface .surface=${surface}></a2ui-surface>`,
-                  )}
-                </section>
-                <form @submit=${(e: globalThis.Event) => this.send(e)}>
-                  <label for="message">Ваш запрос</label>
-                  <div class="composer">
+                  ${this.snapshot?.dialog.run?.error
+                    ? html`<p class="error" role="alert">
+                        ${this.snapshot.dialog.run.error.message}
+                      </p>`
+                    : nothing}
+                  ${this.notice
+                    ? html`<p class="notice">${this.notice}</p>`
+                    : nothing}
+                  <form @submit=${(e: globalThis.Event) => this.send(e)}>
+                    <label for="message">Ваш запрос</label>
                     <textarea
                       id="message"
-                      placeholder="Опишите, что хотите найти…"
+                      placeholder="Например, лампа для чтения до 3 000 ₽"
                       .value=${this.draft}
                       @input=${(e: InputEvent) => {
                         this.draft = (e.target as HTMLTextAreaElement).value;
                       }}
                       ?disabled=${this.busy || !!this.client.pending}
-                    ></textarea
-                    ><button
-                      type="submit"
-                      ?disabled=${this.busy || !!this.client.pending}
-                    >
-                      Отправить ↗
-                    </button>
-                  </div>
-                  <small
-                    >Демонстрационные товары. Действия только для чтения.</small
+                    ></textarea>
+                    <div class="composer-actions">
+                      <span class="small muted"
+                        >${this.busy
+                          ? "Можно остановить запрос"
+                          : "Запрос и результат сохранятся"}</span
+                      >${this.busy && this.snapshot?.dialog.run
+                        ? html`<button
+                            type="button"
+                            class="secondary"
+                            @click=${() => this.cancel()}
+                          >
+                            Отменить
+                          </button>`
+                        : html`<button
+                            type="submit"
+                            ?disabled=${this.busy || !!this.client.pending}
+                          >
+                            Отправить
+                          </button>`}
+                    </div>
+                  </form>
+                </div>`
+              : nothing}
+            ${this.error
+              ? html`<div class="error" role="alert">
+                  ${this.error}<button
+                    class="quiet"
+                    @click=${() => {
+                      this.error = "";
+                      void this.load();
+                    }}
                   >
-                </form>
-              </section>`}${this.notice
-          ? html`<p class="notice">${this.notice}</p>`
-          : nothing}${this.error
-          ? html`<p class="error" role="alert">${this.error}</p>`
-          : nothing}${this.client.pending
-          ? html`<button
-              @click=${() =>
-                this.guarded(async () => {
-                  const result = await this.client.retry<{
-                    dialogId?: string;
-                    runId?: string;
-                  }>();
-                  if (result.dialogId) await this.open(result.dialogId);
-                  else if (this.snapshot)
-                    await this.open(this.snapshot.dialog.id);
-                  if (result.runId) this.draft = "";
-                })}
-            >
-              Повторить отправку
-            </button>`
-          : nothing}
+                    Обновить
+                  </button>
+                </div>`
+              : nothing}
+            ${this.client.pending
+              ? html`<button
+                  class="secondary retry"
+                  @click=${() =>
+                    this.guarded(async () => {
+                      const result = await this.client.retry<{
+                        dialogId?: string;
+                        runId?: string;
+                      }>();
+                      if (result.dialogId) await this.open(result.dialogId);
+                      else if (this.snapshot)
+                        await this.open(this.snapshot.dialog.id);
+                      if (result.runId) this.draft = "";
+                    })}
+                >
+                  Повторить отправку
+                </button>`
+              : nothing}
+          </section>
+          <section
+            id="result"
+            class="result-panel"
+            aria-label="Результат агента"
+          >
+            <div class="panel-heading">
+              <h2>Результат</h2>
+              <span class="revision"
+                >${surfaces.length
+                  ? `Версия ${this.snapshot?.dialog.ui.revision ?? 0}`
+                  : "Пока нет подборки"}</span
+              >
+            </div>
+            <div class="canvas">
+              ${surfaces.length
+                ? html`<div
+                    class="surfaces"
+                    aria-label="Результат"
+                    ?inert=${this.busy ||
+                    this.snapshot?.dialog.run?.status !== "succeeded"}
+                  >
+                    ${surfaces.map(
+                      (surface) =>
+                        html`<a2ui-surface .surface=${surface}></a2ui-surface>`,
+                    )}
+                  </div>`
+                : html`<div class="canvas-empty">
+                    <span class="canvas-symbol" aria-hidden="true">[ → ]</span>
+                    <h3>
+                      ${this.busy
+                        ? "Агент готовит подборку"
+                        : "Место для вашей подборки"}
+                    </h3>
+                    <p>
+                      ${this.busy
+                        ? "Результат появится здесь. Можно остаться в диалоге или отменить запрос."
+                        : "Здесь появятся товары и форма уточнения. Вы сможете менять подборку прямо в результате."}
+                    </p>
+                  </div>`}
+            </div>
+            <div class="canvas-caption">
+              <span
+                >${surfaces.length
+                  ? "Уточняйте подборку через форму"
+                  : "Запрос → подборка → уточнение"}</span
+              ><span>A2UI</span>
+            </div>
+          </section>
+        </div>
       </main>
     </div>`;
   }

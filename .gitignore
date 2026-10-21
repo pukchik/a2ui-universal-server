@@ -10,6 +10,7 @@ test-results/
 *.log
 .playwright-cli/
 output/
+.taste-skill/
 
 # Generated demo deploy context
 deploy/strazh-build/
