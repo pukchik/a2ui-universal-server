@@ -16,8 +16,10 @@
     "test": "vitest run",
     "db:migrate": "node --env-file-if-exists=.env apps/server/src/migrate.ts",
     "smoke:codex": "node --env-file-if-exists=.env scripts/smoke-codex.ts",
-    "format": "prettier --write apps packages tests scripts deploy package.json tsconfig.json vitest.config.ts compose.yaml pnpm-workspace.yaml",
-    "browser:install": "playwright install chromium"
+    "format": "prettier --write apps packages tests scripts deploy .gitea package.json tsconfig.json vitest.config.ts compose.yaml pnpm-workspace.yaml",
+    "browser:install": "playwright install chromium",
+    "test:ci": "bash scripts/test-ci.sh",
+    "format:check": "prettier --check apps packages tests scripts deploy .gitea package.json tsconfig.json vitest.config.ts compose.yaml pnpm-workspace.yaml"
   },
   "dependencies": {
     "@a2ui/lit": "0.14.0",
