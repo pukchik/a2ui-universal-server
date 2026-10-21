@@ -1,5 +1,6 @@
 packages:
   - apps/*
+  - demo/*
   - packages/*
 minimumReleaseAgeExclude:
   - vite@8.3.5

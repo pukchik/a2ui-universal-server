@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { toolDefinitions } from "./tools.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ZodRawShape } from "zod";
 import type { Engine } from "./engine.ts";
@@ -15,7 +14,7 @@ export function registerMcp(app: FastifyInstance, engine: Engine) {
     await engine.store.active(engine.store.pool, run);
     if (req.headers.origin) throw new AppError(403, "mcp_browser_origin");
     const server = new McpServer({ name: "a2ui-project", version: "0.1.0" });
-    for (const [name, tool] of Object.entries(toolDefinitions))
+    for (const [name, tool] of Object.entries(engine.tools))
       server.registerTool(
         name,
         {

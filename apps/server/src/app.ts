@@ -4,12 +4,11 @@ import cookie from "@fastify/cookie";
 import staticFiles from "@fastify/static";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import type { Config } from "./config.ts";
 import { Store } from "./storage/store.ts";
 import { Engine } from "./engine.ts";
-import { fixtureAdapter } from "./adapters/fixture.ts";
-import { codexAdapter } from "./adapters/codex.ts";
+import type { Adapter } from "./adapters/types.ts";
+import type { ToolRegistry } from "./tools.ts";
 import { registerAuth } from "./auth.ts";
 import { registerMcp } from "./mcp.ts";
 import { configuredCatalog } from "./catalog-config.ts";
@@ -26,7 +25,15 @@ import {
 import type { Action } from "../../../packages/contracts/src/index.ts";
 export async function buildApp(
   config: Config,
-  options: { store?: Store; logger?: boolean; startEngine?: boolean } = {},
+  options: {
+    adapter: Adapter;
+    tools?: ToolRegistry;
+    instructions?: string;
+    webRoot?: string;
+    store?: Store;
+    logger?: boolean;
+    startEngine?: boolean;
+  },
 ) {
   const streams = new Set<() => void>();
   const app = Fastify({
@@ -41,18 +48,14 @@ export async function buildApp(
     : await defaultCatalog();
   const engine = new Engine(
     store,
-    config.ADAPTER === "fixture"
-      ? fixtureAdapter
-      : codexAdapter({
-          executable: config.CODEX_BIN,
-          profileDir: config.CODEX_PROFILE_DIR!,
-          model: config.CODEX_MODEL,
-        }),
+    options.adapter,
     new URL("/internal/mcp", `http://127.0.0.1:${config.PORT}`).href,
     config.MAX_CONCURRENT_RUNS,
     config.RUN_TIMEOUT_MS,
+    options.tools,
   );
   engine.catalog = store.catalog;
+  engine.instructions = options.instructions ?? "";
   if (config.PROJECT_INSTRUCTIONS_FILE) {
     const instructions = await readFile(
       config.PROJECT_INSTRUCTIONS_FILE,
@@ -60,7 +63,7 @@ export async function buildApp(
     );
     if (instructions.length > 16000)
       throw new Error("Инструкции проекта слишком большие");
-    engine.instructions = instructions;
+    engine.instructions += `\n${instructions}`;
   }
   await app.register(swagger, {
     openapi: { info: { title: "A2UI Uniserver", version: "0.1.0" } },
@@ -336,9 +339,9 @@ export async function buildApp(
     },
   );
   registerMcp(app, engine);
-  const webRoot = fileURLToPath(new URL("../../web/dist/", import.meta.url));
-  if (existsSync(webRoot)) await app.register(staticFiles, { root: webRoot });
-  else
+  if (options.webRoot && existsSync(options.webRoot))
+    await app.register(staticFiles, { root: options.webRoot });
+  else if (options.webRoot)
     app.get("/", async (_req, reply) =>
       reply
         .code(503)

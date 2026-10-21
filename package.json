@@ -8,18 +8,18 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "node --env-file-if-exists=.env --watch apps/server/src/main.ts",
-    "start": "node --env-file-if-exists=.env apps/server/src/main.ts",
-    "web:dev": "vite --config apps/web/vite.config.ts",
-    "build": "pnpm check && vite build --config apps/web/vite.config.ts",
+    "dev": "node --env-file-if-exists=demo/.env --watch demo/server/main.ts",
+    "start": "node --env-file-if-exists=demo/.env demo/server/main.ts",
+    "web:dev": "vite --config demo/web/vite.config.ts",
+    "build": "pnpm check && vite build --config demo/web/vite.config.ts",
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "db:migrate": "node --env-file-if-exists=.env apps/server/src/migrate.ts",
-    "smoke:codex": "node --env-file-if-exists=.env scripts/smoke-codex.ts",
-    "format": "prettier --write apps packages tests scripts deploy .gitea package.json tsconfig.json vitest.config.ts compose.yaml pnpm-workspace.yaml",
+    "db:migrate": "node --env-file-if-exists=demo/.env apps/server/src/migrate.ts",
+    "smoke:codex": "node --env-file-if-exists=demo/.env demo/scripts/smoke-codex.ts",
+    "format": "prettier --write apps packages tests scripts demo .gitea package.json tsconfig.json vitest.config.ts pnpm-workspace.yaml",
     "browser:install": "playwright install chromium",
     "test:ci": "bash scripts/test-ci.sh",
-    "format:check": "prettier --check apps packages tests scripts deploy .gitea package.json tsconfig.json vitest.config.ts compose.yaml pnpm-workspace.yaml"
+    "format:check": "prettier --check apps packages tests scripts demo .gitea package.json tsconfig.json vitest.config.ts pnpm-workspace.yaml"
   },
   "dependencies": {
     "@a2ui/lit": "0.14.0",

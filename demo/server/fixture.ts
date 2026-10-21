@@ -1,6 +1,6 @@
-import type { Adapter } from "./types.ts";
-import { productUi } from "../tools.ts";
-import type { products } from "../tools.ts";
+import type { Adapter } from "../../apps/server/src/adapters/types.ts";
+import { productUi } from "./tools.ts";
+import type { products } from "./tools.ts";
 export const fixtureAdapter: Adapter = {
   kind: "agent",
   async run(context, callTool, signal) {

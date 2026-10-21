@@ -1,6 +1,6 @@
 import { randomBytes, createHash } from "node:crypto";
 import { Store } from "./storage/store.ts";
-import { toolDefinitions } from "./tools.ts";
+import type { ToolRegistry } from "./tools.ts";
 import { runAdapter } from "./adapters/types.ts";
 import type { CatalogSnapshot } from "../../../packages/catalogs/src/index.ts";
 import type { Adapter, AgentContext } from "./adapters/types.ts";
@@ -10,12 +10,13 @@ import { safeJson } from "../../../packages/core/src/ui.ts";
 const digest = (v: string) => createHash("sha256").update(v).digest("hex");
 export class Engine {
   catalog?: CatalogSnapshot;
-  instructions = "Помогай искать товары в демонстрационном каталоге.";
+  instructions = "";
   store: Store;
   adapter: Adapter;
   url: string;
   concurrency: number;
   timeoutMs: number;
+  readonly tools: ToolRegistry;
   active = new Map<
     string,
     { controller: AbortController; task: Promise<void> }
@@ -30,12 +31,14 @@ export class Engine {
     url: string,
     concurrency = 2,
     timeoutMs = 120000,
+    tools: ToolRegistry = {},
   ) {
     this.store = store;
     this.adapter = adapter;
     this.url = url;
     this.concurrency = concurrency;
     this.timeoutMs = timeoutMs;
+    this.tools = tools;
   }
   start() {
     this.timer = setInterval(() => {
@@ -85,7 +88,7 @@ export class Engine {
   }
   async callTool(run: Run, name: string, args: unknown, id: string) {
     safeJson(args);
-    const tool = toolDefinitions[name as keyof typeof toolDefinitions];
+    const tool = Object.hasOwn(this.tools, name) ? this.tools[name] : undefined;
     if (!tool) throw new AppError(403, "tool_denied");
     const parsed = tool.schema.safeParse(args);
     if (!parsed.success) throw new AppError(422, "tool_arguments");
@@ -94,7 +97,7 @@ export class Engine {
     const start = await this.store.toolStart(run, id, name, args);
     if (start.cached) return start.result;
     try {
-      const result = tool.execute(parsed.data as never) as unknown as Json;
+      const result = (await tool.execute(parsed.data as never)) as Json;
       await this.store.toolEnd(run, id, result);
       return result;
     } catch (e) {

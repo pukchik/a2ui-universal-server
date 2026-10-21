@@ -1,5 +1,5 @@
-import { configFrom } from "./config.ts";
-import { buildApp } from "./app.ts";
+import { configFrom } from "../../apps/server/src/config.ts";
+import { buildDemoApp as buildApp } from "./app.ts";
 const config = configFrom(process.env);
 const { app, store, engine } = await buildApp(config, {
   logger: true,

@@ -1,3 +1,4 @@
+name: a2ui-uniserver
 services:
   db:
     image: postgres:18.6
@@ -24,7 +25,9 @@ services:
       ["./deploy/realm.json:/opt/keycloak/data/import/a2ui-realm.json:ro"]
   server:
     profiles: ["server"]
-    build: .
+    build:
+      context: ..
+      dockerfile: demo/Dockerfile
     init: true
     environment:
       HOST: 0.0.0.0
@@ -38,7 +41,7 @@ services:
       ADAPTER: codex
       CODEX_PROFILE_DIR: /var/lib/codex
     ports: ["127.0.0.1:3100:3100"]
-    volumes: ["${CODEX_PROFILE_DIR:-./.codex-runtime/profile}:/var/lib/codex"]
+    volumes: ["${CODEX_PROFILE_DIR:-../.codex-runtime/profile}:/var/lib/codex"]
     depends_on:
       db: { condition: service_healthy }
 volumes:

@@ -1,43 +1,55 @@
-# Запуск первой версии
+# Демоприложение A2UI
+
+В этой папке собран пример каталога ламп: Lit-клиент в `web/`, данные, инструменты, тестовый адаптер и инструкции агенту в `server/`, проверка Codex в `scripts/`, конфигурации Keycloak и каталога в `deploy/`. Здесь же находятся `.env`, Makefile, Compose и Dockerfile. Пример использует общее серверное ядро из `../apps/server` и пакеты из `../packages`; папка не является отдельным репозиторием.
+
+Можно работать непосредственно отсюда:
+
+```sh
+cd demo
+make run       # Codex
+# или make demo — тестовый адаптер
+```
+
+Команды из корня (`make run`, `make demo`) перенаправляются в этот Makefile. Оформление клиента описано в [DESIGN.md](DESIGN.md).
 
 Нужны Node.js 24+, pnpm 12.14.0 и PostgreSQL 18. Официальный `@openai/codex-sdk@0.163.0` устанавливается вместе с зависимостями; Codex CLI 0.163.0 нужен для реального агента. Установка зависимостей закреплена lockfile.
 
 ```sh
 pnpm install --frozen-lockfile
-cp .env.example .env
+cp demo/.env.example demo/.env
 ```
 
-В `.env` укажите `DATABASE_URL` и параметры авторизации. Все команды выполняются из корня репозитория. Миграции автоматически применяются при старте; отдельно их можно выполнить через `pnpm db:migrate`.
+В `demo/.env` укажите `DATABASE_URL` и параметры авторизации. Все команды pnpm и Docker выполняются из корня репозитория. Команды Make доступны как из корня, так и из `demo/`. Миграции автоматически применяются при старте; отдельно их можно выполнить через `pnpm db:migrate`.
 
 ## Команды Make
 
 ```sh
-make setup    # pnpm install и создание .env без перезаписи существующего
+make setup    # pnpm install и создание demo/.env без перезаписи существующего
 make db       # PostgreSQL из compose, с ожиданием готовности
 make run      # сборка + Codex + локальный вход, http://localhost:3100
 ```
 
-До `make run` задайте `DATABASE_URL` и `CODEX_PROFILE_DIR` в `.env`; профиль Codex должен быть заранее авторизован. Команда принудительно выбирает `ADAPTER=codex`, `AUTH_MODE=demo` и `HOST=127.0.0.1`. Кнопка «Открыть демонстрацию» даёт локальную сессию приложения; запросы обрабатывает настоящий Codex и расходует лимиты выбранной учётной записи. Это запуск для разработки на своём компьютере. `PUBLIC_URL` должен соответствовать адресу браузера и указывать на loopback. Для внешней PostgreSQL пропустите `make db`.
+До `make run` задайте `DATABASE_URL` и `CODEX_PROFILE_DIR` в `demo/.env`; профиль Codex должен быть заранее авторизован. Команда принудительно выбирает `ADAPTER=codex`, `AUTH_MODE=demo` и `HOST=127.0.0.1`. Кнопка «Открыть демонстрацию» даёт локальную сессию приложения; запросы обрабатывает настоящий Codex и расходует лимиты выбранной учётной записи. Это запуск для разработки на своём компьютере. `PUBLIC_URL` должен соответствовать адресу браузера и указывать на loopback. Для внешней PostgreSQL пропустите `make db`.
 
-| Команда | Назначение |
-| --- | --- |
-| `make run` / `make codex` | Собрать клиент и запустить локальный Codex без OIDC |
-| `make start` | Собрать клиент и запустить сервер с настройками `.env`, включая OIDC |
-| `make demo` | Собрать и запустить локальную демку с fixture-адаптером, без модели |
-| `make dev` / `make web` | Сервер с перезапуском / отдельный Vite; параметры берутся из `.env` |
-| `make check` | Форматирование и TypeScript |
-| `make test` | Vitest; полный прогон требует отдельной `TEST_DATABASE_URL` |
-| `make smoke-codex` | Настоящий запрос и действие через Codex, с отдельной БД |
+| Команда                   | Назначение                                                                |
+| ------------------------- | ------------------------------------------------------------------------- |
+| `make run` / `make codex` | Собрать клиент и запустить локальный Codex без OIDC                       |
+| `make start`              | Собрать клиент и запустить сервер с настройками `demo/.env`, включая OIDC |
+| `make demo`               | Собрать и запустить локальную демку с fixture-адаптером, без модели       |
+| `make dev` / `make web`   | Сервер с перезапуском / отдельный Vite; параметры берутся из `demo/.env`  |
+| `make check`              | Форматирование и TypeScript                                               |
+| `make test`               | Vitest; полный прогон требует отдельной `TEST_DATABASE_URL`               |
+| `make smoke-codex`        | Настоящий запрос и действие через Codex, с отдельной БД                   |
 
 `make run`, `make start` и `make demo` работают на переднем плане; остановка — Ctrl+C. База и профиль не создаются и не очищаются этими командами. Все параметры можно передать через окружение или аргументы Make, например `make run PORT=3200 PUBLIC_URL=http://localhost:3200`. Эквивалентные команды pnpm остаются доступны ниже.
 
 ## Быстрая локальная демонстрация
 
 ```sh
-docker compose up -d db
+docker compose --env-file demo/.env -f demo/compose.yaml up -d db
 ```
 
-Настройки `.env`:
+Настройки `demo/.env`:
 
 ```dotenv
 DATABASE_URL=postgres://a2ui:a2ui@127.0.0.1:5432/a2ui
@@ -90,7 +102,7 @@ pnpm smoke:codex
 Основной режим — `AUTH_MODE=oidc`. Для локального примера:
 
 ```sh
-docker compose --profile oidc up -d db keycloak
+docker compose --env-file demo/.env -f demo/compose.yaml --profile oidc up -d db keycloak
 ```
 
 ```dotenv
@@ -101,12 +113,12 @@ OIDC_CLIENT_SECRET=local-development-secret
 PUBLIC_URL=http://localhost:3100
 ```
 
-Тестовый пользователь из `deploy/realm.json`: `demo` / `demo-password`. Это открытые демонстрационные учётные данные только для локального примера. В собственной установке задайте свой OIDC-провайдер, клиента и секрет. Браузер получает серверную сессию, токены провайдера остаются на сервере; изменяющие HTTP-запросы требуют CSRF-токен и совпадающий Origin.
+Тестовый пользователь из `demo/deploy/realm.json`: `demo` / `demo-password`. Это открытые демонстрационные учётные данные только для локального примера. В собственной установке задайте свой OIDC-провайдер, клиента и секрет. Браузер получает серверную сессию, токены провайдера остаются на сервере; изменяющие HTTP-запросы требуют CSRF-токен и совпадающий Origin.
 
 Для контейнерного сервера предусмотрен профиль `server`:
 
 ```sh
-docker compose --profile server up -d --build db server
+docker compose --env-file demo/.env -f demo/compose.yaml --profile server up -d --build db server
 ```
 
 OIDC issuer должен быть доступен **и браузеру, и контейнеру** с тем же именем. `localhost:18080` внутри контейнера не является Keycloak на хосте. В этом профиле настройте доступный обеим сторонам issuer, `PUBLIC_URL` и существующий служебный `CODEX_PROFILE_DIR`. `init: true` обеспечивает надзор за дочерними процессами в контейнере. PostgreSQL и опубликованные порты примера привязаны к loopback; публичная установка использует TLS reverse proxy без буферизации SSE.
@@ -126,10 +138,14 @@ node scripts/export-catalog.ts > /tmp/a2ui-catalog.json
 Локальная конфигурация источника:
 
 ```json
-{"name":"project-components","type":"local","path":"/tmp/a2ui-catalog.json"}
+{
+  "name": "project-components",
+  "type": "local",
+  "path": "/tmp/a2ui-catalog.json"
+}
 ```
 
-Задайте путь к ней в `CATALOG_SOURCE_CONFIG`. Другие типы — `https` с `url`, и `mcp` с `url`, `tool`, необязательными `args`. Пример MCP находится в `deploy/catalog-source.example.json`. `tokenEnv` называет отдельную переменную окружения для авторизации источника; эти полномочия не передаются агенту.
+Задайте путь к ней в `CATALOG_SOURCE_CONFIG`. Другие типы — `https` с `url`, и `mcp` с `url`, `tool`, необязательными `args`. Пример MCP находится в `demo/deploy/catalog-source.example.json`. `tokenEnv` называет отдельную переменную окружения для авторизации источника; эти полномочия не передаются агенту.
 
 В этой версии все источники должны возвращать документ закреплённого встроенного профиля. Другой набор компонентов требует соответствующих клиентского рендерера и серверной проверки; несовместимый документ отклоняется при старте. Загрузчики источников реализованы независимо от этого ограничения. Частные URL и credentials регистрирует оператор; браузер и модель не могут выбирать произвольные источники.
 
@@ -139,17 +155,17 @@ node scripts/export-catalog.ts > /tmp/a2ui-catalog.json
 
 Все `/v1` операции с пользовательскими данными используют серверную сессию. После входа `GET /v1/session` возвращает `csrf`, который передаётся в `X-CSRF-Token` вместе с `Origin` во всех POST. Примеры тел:
 
-| Операция | Маршрут | Тело |
-| --- | --- | --- |
-| Создать диалог | `POST /v1/dialogs` | `{commandId}` |
-| Сообщение | `POST /v1/dialogs/:id/messages` | `{commandId,text}` |
-| Действие | `POST /v1/dialogs/:id/actions` | `{commandId,uiRevision,action:{surfaceId,componentId,name,context}}` |
-| Снимок | `GET /v1/dialogs/:id/snapshot` | — |
-| События | `GET /v1/dialogs/:id/events?after=0` | — |
-| Отмена | `POST /v1/dialogs/:id/runs/:runId/cancel` | `{commandId}` |
-| Разовая генерация | `POST /v1/generations` | `{commandId,text}` |
-| Результат генерации | `GET /v1/generations/:generationId` | — |
-| Отмена генерации | `POST /v1/generations/:generationId/cancel` | `{commandId}` |
+| Операция            | Маршрут                                     | Тело                                                                 |
+| ------------------- | ------------------------------------------- | -------------------------------------------------------------------- |
+| Создать диалог      | `POST /v1/dialogs`                          | `{commandId}`                                                        |
+| Сообщение           | `POST /v1/dialogs/:id/messages`             | `{commandId,text}`                                                   |
+| Действие            | `POST /v1/dialogs/:id/actions`              | `{commandId,uiRevision,action:{surfaceId,componentId,name,context}}` |
+| Снимок              | `GET /v1/dialogs/:id/snapshot`              | —                                                                    |
+| События             | `GET /v1/dialogs/:id/events?after=0`        | —                                                                    |
+| Отмена              | `POST /v1/dialogs/:id/runs/:runId/cancel`   | `{commandId}`                                                        |
+| Разовая генерация   | `POST /v1/generations`                      | `{commandId,text}`                                                   |
+| Результат генерации | `GET /v1/generations/:generationId`         | —                                                                    |
+| Отмена генерации    | `POST /v1/generations/:generationId/cancel` | `{commandId}`                                                        |
 
 `commandId` — UUID, созданный клиентом до отправки. Повтор того же ID с тем же содержимым возвращает первоначальный результат принятия. С другим содержимым — `409 command_conflict`. Идентификатор ресурса не заменяет проверку владельца.
 
@@ -168,4 +184,4 @@ TEST_DATABASE_URL=postgres://USER:PASSWORD@localhost:5432/a2ui_test pnpm test
 
 Без `TEST_DATABASE_URL` проверки PostgreSQL и HTTP явно пропускаются; это не полный прогон. Используйте отдельную тестовую БД. Тесты создают записи с уникальными идентификаторами и не очищают существующие базы или файлы.
 
-Проверяются каталог, границы адаптеров, официальный A2UI, повторные команды, права, отмена, восстановление после перезапуска, ошибки и остановка процесса CLI. Браузерный прогон и реальный Codex проверяются отдельно от детерминированных тестов. Результаты конкретной проверки приведены в `docs/VALIDATION.md`.
+Проверяются каталог, границы адаптеров, официальный A2UI, повторные команды, права, отмена, восстановление после перезапуска, ошибки и остановка процесса CLI. Браузерный прогон и реальный Codex проверяются отдельно от детерминированных тестов. Результаты конкретной проверки приведены в [docs/VALIDATION.md](../docs/VALIDATION.md).

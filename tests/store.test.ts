@@ -1,8 +1,9 @@
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
 import { Store } from "../apps/server/src/storage/store.ts";
-import { productUi } from "../apps/server/src/tools.ts";
+import { productUi } from "../demo/server/tools.ts";
 import { Engine } from "../apps/server/src/engine.ts";
+import { z } from "zod";
 import type { Adapter } from "../apps/server/src/adapters/types.ts";
 const url = process.env.TEST_DATABASE_URL;
 describe.skipIf(!url)("PostgreSQL commands and execution", () => {
@@ -138,6 +139,39 @@ describe.skipIf(!url)("PostgreSQL commands and execution", () => {
     expect((await store.get(id, user)).run?.status).toBe("succeeded");
     expect(n).toBe(2);
     await engine.stop();
+  });
+  it("executes only the application's supplied tools", async () => {
+    const id = await create();
+    const adapter: Adapter = {
+      kind: "agent",
+      async run(_context, call) {
+        await expect(call("get_product", {}, "denied")).rejects.toMatchObject({
+          code: "tool_denied",
+        });
+        await expect(call("toString", {}, "inherited")).rejects.toMatchObject({
+          code: "tool_denied",
+        });
+        const result = await call("echo", { text: "application data" }, "echo");
+        return { text: String(result), a2uiJson: "[]" };
+      },
+    };
+    const engine = new Engine(store, adapter, "http://127.0.0.1:1", 1, 120000, {
+      echo: {
+        description: "Return the supplied text",
+        schema: z.object({ text: z.string() }).strict(),
+        execute: async (args: { text: string }) => args.text,
+      },
+    });
+    await store.accept(user, id, randomUUID(), { text: "custom application" });
+    try {
+      await engine.pump();
+      await Promise.all([...engine.active.values()].map((v) => v.task));
+      const snapshot = await store.snapshot(id, user);
+      expect(snapshot.dialog.run?.status).toBe("succeeded");
+      expect(snapshot.messages.at(-1)?.text).toBe("application data");
+    } finally {
+      await engine.stop();
+    }
   });
   it("supports isolated one-shot generations without dialog continuation", async () => {
     const key = randomUUID();

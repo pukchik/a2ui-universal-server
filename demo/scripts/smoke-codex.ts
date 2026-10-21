@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { buildApp } from "../apps/server/src/app.ts";
-import { configFrom } from "../apps/server/src/config.ts";
-import type { Action } from "../packages/contracts/src/index.ts";
+import { buildDemoApp as buildApp } from "../server/app.ts";
+import { configFrom } from "../../apps/server/src/config.ts";
+import type { Action } from "../../packages/contracts/src/index.ts";
 const config = configFrom({
   ...process.env,
   AUTH_MODE: "demo",

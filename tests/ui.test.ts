@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { applyUi, validateAction } from "../packages/core/src/ui.ts";
-import { productUi } from "../apps/server/src/tools.ts";
+import { productUi } from "../demo/server/tools.ts";
 const empty = { messages: [], revision: 0 };
 describe("A2UI protocol and application profile", () => {
   it("validates real Basic Catalog messages and restores the same UI", () => {

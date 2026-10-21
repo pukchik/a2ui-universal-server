@@ -8,4 +8,4 @@ RUN pnpm build
 USER node
 ENV HOST=0.0.0.0 PORT=3100 NODE_ENV=production
 EXPOSE 3100
-CMD ["node", "apps/server/src/main.ts"]
+CMD ["node", "demo/server/main.ts"]
