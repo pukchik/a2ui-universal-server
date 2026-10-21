@@ -9,10 +9,17 @@ export class ApiError extends Error {
   }
 }
 export class Client {
+  basePath: string;
+  constructor(basePath = "/") {
+    this.basePath = basePath.endsWith("/") ? basePath : `${basePath}/`;
+  }
+  url(path: string) {
+    return `${this.basePath}${path.replace(/^\//, "")}`;
+  }
   csrf = "";
   pending?: { path: string; body: Record<string, unknown> };
   async request<T>(path: string, body?: unknown): Promise<T> {
-    const response = await fetch(path, {
+    const response = await fetch(this.url(path), {
       method: body ? "POST" : "GET",
       credentials: "same-origin",
       headers: body
@@ -72,7 +79,9 @@ export class Client {
     onReset: () => void,
     onError: () => void,
   ) {
-    const source = new EventSource(`/v1/dialogs/${id}/events?after=${after}`);
+    const source = new EventSource(
+      this.url(`/v1/dialogs/${id}/events?after=${after}`),
+    );
     let cursor = after;
     source.onmessage = (message) => {
       try {

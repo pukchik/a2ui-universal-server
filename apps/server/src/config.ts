@@ -5,6 +5,8 @@ export const envSchema = z.object({
   PUBLIC_URL: z.string().url().default("http://localhost:3100"),
   DATABASE_URL: z.string().min(1),
   AUTH_MODE: z.enum(["oidc", "demo"]).default("oidc"),
+  PUBLIC_DEMO: z.enum(["true", "false"]).default("false"),
+  APP_REVISION: z.string().default("development"),
   OIDC_ISSUER: z.string().url().optional(),
   OIDC_CLIENT_ID: z.string().optional(),
   OIDC_CLIENT_SECRET: z.string().optional(),
@@ -22,7 +24,21 @@ export function configFrom(env: NodeJS.ProcessEnv): Config {
   const config = envSchema.parse(env);
   const url = new URL(config.PUBLIC_URL);
   if (
+    config.PUBLIC_DEMO === "true" &&
+    (config.AUTH_MODE !== "demo" ||
+      config.ADAPTER !== "fixture" ||
+      url.protocol !== "https:")
+  )
+    throw new Error(
+      "Публичный стенд требует HTTPS, AUTH_MODE=demo и ADAPTER=fixture",
+    );
+  if (!url.pathname.endsWith("/") || url.search || url.hash)
+    throw new Error(
+      "PUBLIC_URL должен заканчиваться / и не содержать query или hash",
+    );
+  if (
     config.AUTH_MODE === "demo" &&
+    config.PUBLIC_DEMO !== "true" &&
     (!["127.0.0.1", "localhost", "::1"].includes(url.hostname) ||
       !["127.0.0.1", "localhost", "::1"].includes(config.HOST))
   )

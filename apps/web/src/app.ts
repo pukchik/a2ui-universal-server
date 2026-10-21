@@ -18,6 +18,7 @@ type User = {
   csrf?: string;
   authMode: string;
   adapter: string;
+  publicDemo: boolean;
 };
 // This profile displays text without HTML or active Markdown content.
 setMarkdownRenderer(async (text) =>
@@ -29,7 +30,7 @@ setMarkdownRenderer(async (text) =>
     .replaceAll("'", "&#39;"),
 );
 class UniserverApp extends LitElement {
-  client = new Client();
+  client = new Client(new URL(document.baseURI).pathname);
   user?: User;
   snapshot?: Snapshot;
   dialogs: { id: string; title: string }[] = [];
@@ -80,7 +81,7 @@ class UniserverApp extends LitElement {
     this.requestUpdate();
   }
   get savedDialogKey() {
-    return `a2ui-dialog:${this.user?.userId ?? "anonymous"}`;
+    return `a2ui-dialog:${this.client.basePath}:${this.user?.userId ?? "anonymous"}`;
   }
   async guarded(fn: () => Promise<void>) {
     if (this.sending) return;
@@ -263,7 +264,9 @@ class UniserverApp extends LitElement {
   render() {
     return html`<div class="layout">
       <aside>
-        <a class="brand" href="/">a2ui<span>/ uniserver</span></a>
+        <a class="brand" href=${this.client.basePath}
+          >a2ui<span>/ uniserver</span></a
+        >
         <div class="project-label">Демонстрационный каталог</div>
         <button
           class="new-dialog"
@@ -323,8 +326,9 @@ class UniserverApp extends LitElement {
                 </p>
                 ${this.user.authMode === "demo"
                   ? html`<p class="demo-note">
-                        Локальный демо-режим. Доступен только на этом
-                        компьютере.
+                        ${this.user.publicDemo
+                          ? "Тестовый стенд. Модель не вызывается; данные сбрасываются при обновлении стенда."
+                          : "Локальный демо-режим. Доступен только на этом компьютере."}
                       </p>
                       <button
                         @click=${() =>
@@ -335,7 +339,11 @@ class UniserverApp extends LitElement {
                       >
                         Открыть демонстрацию
                       </button>`
-                  : html`<a class="button" href="/auth/login">Войти</a>`}
+                  : html`<a
+                      class="button"
+                      href=${this.client.url("/auth/login")}
+                      >Войти</a
+                    >`}
               </section>`
             : html`<section class="workspace">
                 ${this.user.adapter === "fixture"

@@ -13,16 +13,21 @@ export async function registerAuth(
   config: Config,
 ) {
   const secure = new URL(config.PUBLIC_URL).protocol === "https:";
+  const basePath = new URL(config.PUBLIC_URL).pathname;
+  const prefix =
+    basePath === "/" ? "a2ui" : `a2ui_${tokenHash(basePath).slice(0, 8)}`;
+  const sessionCookie = `${prefix}_session`;
+  const oidcCookie = `${prefix}_oidc`;
   const cookie = {
     httpOnly: true,
     sameSite: "lax" as const,
     secure,
-    path: "/",
+    path: basePath,
   };
   const read = async (req: FastifyRequest): Promise<Session | undefined> => {
-    const value = req.cookies.a2ui_session;
+    const value = req.cookies[sessionCookie];
     const session = value ? await store.session(tokenHash(value)) : undefined;
-    if (config.AUTH_MODE === "oidc" && session?.userId === "demo-user")
+    if (config.AUTH_MODE === "oidc" && session?.userId.startsWith("demo-"))
       return undefined;
     return session;
   };
@@ -51,7 +56,7 @@ export async function registerAuth(
       expiresAt: new Date(Date.now() + 8 * 3600000),
     };
     await store.putSession(tokenHash(secret), session);
-    reply.setCookie("a2ui_session", secret, { ...cookie, maxAge: 8 * 3600 });
+    reply.setCookie(sessionCookie, secret, { ...cookie, maxAge: 8 * 3600 });
   };
   let discovery: Promise<oidc.Configuration> | undefined;
   const provider = () =>
@@ -77,32 +82,34 @@ export async function registerAuth(
           csrf: session.csrf,
           authMode: config.AUTH_MODE,
           adapter: config.ADAPTER,
+          publicDemo: config.PUBLIC_DEMO === "true",
         }
       : {
           authenticated: false,
           authMode: config.AUTH_MODE,
           adapter: config.ADAPTER,
+          publicDemo: config.PUBLIC_DEMO === "true",
         };
   });
   app.post("/auth/demo", async (req, reply) => {
     if (config.AUTH_MODE !== "demo") throw new AppError(404, "not_found");
     if (req.headers.origin !== new URL(config.PUBLIC_URL).origin)
       throw new AppError(403, "origin");
-    await signIn(reply, "demo-user", "Локальный демонстрационный пользователь");
+    await signIn(reply, `demo-${token()}`, "Демонстрационный пользователь");
     return { ok: true };
   });
   app.get("/auth/login", async (_req, reply) => {
-    if (config.AUTH_MODE !== "oidc") return reply.redirect("/");
+    if (config.AUTH_MODE !== "oidc") return reply.redirect(basePath);
     const client = await provider();
     const verifier = oidc.randomPKCECodeVerifier();
     const state = oidc.randomState();
     const nonce = oidc.randomNonce();
     const key = token();
     await store.loginAttempt(tokenHash(key), { verifier, state, nonce });
-    reply.setCookie("a2ui_oidc", key, { ...cookie, maxAge: 600 });
+    reply.setCookie(oidcCookie, key, { ...cookie, maxAge: 600 });
     return reply.redirect(
       oidc.buildAuthorizationUrl(client, {
-        redirect_uri: new URL("/auth/callback", config.PUBLIC_URL).href,
+        redirect_uri: new URL("auth/callback", config.PUBLIC_URL).href,
         scope: "openid profile",
         code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
         code_challenge_method: "S256",
@@ -113,15 +120,15 @@ export async function registerAuth(
   });
   app.get("/auth/callback", async (req, reply) => {
     if (config.AUTH_MODE !== "oidc") throw new AppError(404, "not_found");
-    const key = req.cookies.a2ui_oidc;
+    const key = req.cookies[oidcCookie];
     if (!key) throw new AppError(401, "login_state");
     const attempt = await store.loginAttempt(tokenHash(key));
-    reply.clearCookie("a2ui_oidc", cookie);
+    reply.clearCookie(oidcCookie, cookie);
     if (!attempt) throw new AppError(401, "login_state");
     const client = await provider();
     const tokens = await oidc.authorizationCodeGrant(
       client,
-      new URL(req.url, config.PUBLIC_URL),
+      new URL(req.url.replace(/^\//, ""), config.PUBLIC_URL),
       {
         pkceCodeVerifier: attempt.verifier,
         expectedState: attempt.state,
@@ -136,13 +143,13 @@ export async function registerAuth(
       `${config.OIDC_ISSUER}|${claims.sub}`,
       String(claims.name ?? claims.preferred_username ?? "Пользователь"),
     );
-    return reply.redirect("/");
+    return reply.redirect(basePath);
   });
   app.post("/auth/logout", async (req, reply) => {
     const user = await requireUser(req);
     csrf(req, user);
-    await store.revokeSession(tokenHash(req.cookies.a2ui_session!));
-    reply.clearCookie("a2ui_session", cookie);
+    await store.revokeSession(tokenHash(req.cookies[sessionCookie]!));
+    reply.clearCookie(sessionCookie, cookie);
     return { ok: true };
   });
   return { read, requireUser, csrf };

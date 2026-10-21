@@ -25,5 +25,6 @@ Assess repeated downloads/installations and supported dependency caches. Check l
 cache support; preserve shared runner configuration and separate tests from dependent builds.
 Verify cache misses and warm runs; report actual pipeline results separately from local checks.
 
-Only trusted code may execute on the host-network runner. This repository currently enables
-CI only; enabling CD requires the owner's configured infrastructure and runtime credentials.
+Only trusted code may execute on the host-network runner. The demo deployment
+uses only the fixture adapter and a disposable database; see docs/DEMO.md. Persistent
+Codex/OIDC deployments require separately configured infrastructure and runtime credentials.

@@ -155,7 +155,10 @@ export async function buildApp(
       return result;
     },
   );
-  app.get("/health", async () => ({ ok: true, version: "0.1.0" }));
+  app.get("/health", async () => {
+    await store.pool.query("SELECT 1");
+    return { ok: true, version: "0.1.0", revision: config.APP_REVISION };
+  });
   app.get("/v1/config", async () => ({
     protocol: "v0.9.1",
     catalogId: CATALOG_ID,

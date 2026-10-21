@@ -10,3 +10,6 @@ test-results/
 *.log
 .playwright-cli/
 output/
+
+# Generated demo deploy context
+deploy/strazh-build/
