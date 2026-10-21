@@ -14,7 +14,9 @@
 | `POST /auth/demo`    | Локальный вход только при `AUTH_MODE=demo`; нужен совпадающий `Origin`           |
 | `POST /auth/logout`  | Отозвать серверную сессию; нужны cookie, CSRF и Origin                           |
 
-Браузер получает HttpOnly cookie `a2ui_session`, `SameSite=Lax`, срок — 8 часов. На HTTPS cookie имеет `Secure`. Все операции с диалогами и генерациями проверяют владельца; ID ресурса не является разрешением. Для POST передавайте `Origin`, cookie и `X-CSRF-Token` из `/v1/session`. Браузер сам формирует Origin; серверный HTTP-клиент должен задать его явно. OIDC-токен не является bearer token этого API.
+Во встроенных OIDC/demo-режимах браузер получает HttpOnly cookie `a2ui_session`, `SameSite=Lax`, срок — 8 часов. На HTTPS cookie имеет `Secure`. Все операции с диалогами и генерациями проверяют владельца; ID ресурса не является разрешением. Для POST передавайте `Origin`, cookie и `X-CSRF-Token` из `/v1/session`. Браузер сам формирует Origin; серверный HTTP-клиент должен задать его явно. OIDC-токен не является встроенным bearer token этого API.
+
+При `AUTH_MODE=custom` приложение передаёт серверный `AuthProvider`; cookie и хранение сессии принадлежат ему. `/v1/session` возвращает `authMode: "custom"` и тот же CSRF-контракт. Отсутствующий login/logout handler возвращает 501 (`login_not_supported` / `logout_not_supported`). Демо-вход и OIDC callback в этом режиме отключены. Пример bridge — в [INTEGRATION.md](INTEGRATION.md#авторизация-существующего-проекта).
 
 ## Команды диалога
 

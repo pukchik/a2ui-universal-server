@@ -87,6 +87,10 @@ export class Engine {
     return entry.run;
   }
   async callTool(run: Run, name: string, args: unknown, id: string) {
+    const signal = this.active.get(run.id)?.controller.signal;
+    if (!signal) throw new AppError(409, "run_inactive");
+    signal.throwIfAborted();
+    const userId = await this.store.runOwner(run);
     safeJson(args);
     const tool = Object.hasOwn(this.tools, name) ? this.tools[name] : undefined;
     if (!tool) throw new AppError(403, "tool_denied");
@@ -97,7 +101,17 @@ export class Engine {
     const start = await this.store.toolStart(run, id, name, args);
     if (start.cached) return start.result;
     try {
-      const result = (await tool.execute(parsed.data as never)) as Json;
+      signal.throwIfAborted();
+      const result = (await tool.execute(
+        parsed.data as never,
+        Object.freeze({
+          userId,
+          dialogId: run.dialogId,
+          runId: run.id,
+          signal,
+        }),
+      )) as Json;
+      signal.throwIfAborted();
       await this.store.toolEnd(run, id, result);
       return result;
     } catch (e) {
@@ -140,7 +154,7 @@ export class Engine {
         expires: Date.now() + this.timeoutMs,
       });
       const context: AgentContext = {
-        run,
+        run: structuredClone(run),
         dialog: snapshot.dialog,
         taskState: snapshot.dialog.taskState ?? {},
         history: snapshot.messages,

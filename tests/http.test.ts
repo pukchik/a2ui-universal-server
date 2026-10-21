@@ -1,7 +1,7 @@
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
 import { buildDemoApp as buildApp } from "../demo/server/app.ts";
-import { configFrom } from "../server/config.ts";
+import { configFrom } from "../demo/server/config.ts";
 const url = process.env.TEST_DATABASE_URL;
 describe.skipIf(!url)("HTTP authorization and commands", () => {
   let app: Awaited<ReturnType<typeof buildApp>>["app"];

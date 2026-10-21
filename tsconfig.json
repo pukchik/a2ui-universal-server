@@ -17,6 +17,7 @@
     "server/**/*.ts",
     "catalog/**/*.ts",
     "demo/**/*.ts",
+    "examples/**/*.ts",
     "packages/**/*.ts",
     "tests/**/*.ts",
     "scripts/**/*.ts",

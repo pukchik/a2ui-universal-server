@@ -393,6 +393,14 @@ export class Store {
     );
     if (!rows[0]) throw new AppError(409, "run_inactive");
   }
+  async runOwner(run: Run): Promise<string> {
+    const { rows } = await this.pool.query(
+      "SELECT d.user_id FROM runs r JOIN dialogs d ON d.id=r.dialog_id WHERE r.id=$1 AND r.dialog_id=$2 AND r.generation=$3 AND r.status='running'",
+      [run.id, run.dialogId, run.generation],
+    );
+    if (!rows[0]) throw new AppError(409, "run_inactive");
+    return rows[0].user_id;
+  }
   async complete(run: Run, text: string, messages: unknown) {
     return this.transaction(async (c) => {
       await c.query("SELECT id FROM dialogs WHERE id=$1 FOR UPDATE", [

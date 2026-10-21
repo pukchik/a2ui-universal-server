@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { AppError } from "../../../packages/core/src/errors.ts";
 import { preparePrompt } from "../../prompt.ts";
 import type { AgentAdapter, AgentOutput } from "../types.ts";
+import { z } from "zod";
 export type CodexOptions = {
   executable: string;
   profileDir: string;
@@ -13,6 +14,22 @@ export type CodexOptions = {
   runtimeDir?: string;
   maxBytes?: number;
 };
+export function codexOptionsFrom(env: NodeJS.ProcessEnv): CodexOptions {
+  const values = z
+    .object({
+      CODEX_BIN: z.string().min(1).default("codex"),
+      CODEX_PROFILE_DIR: z.string().min(1),
+      CODEX_MODEL: z.string().min(1).optional(),
+      CODEX_RUNTIME_DIR: z.string().min(1).optional(),
+    })
+    .parse(env);
+  return {
+    executable: values.CODEX_BIN,
+    profileDir: values.CODEX_PROFILE_DIR,
+    model: values.CODEX_MODEL,
+    runtimeDir: values.CODEX_RUNTIME_DIR,
+  };
+}
 const outputSchema = {
   type: "object",
   properties: { text: { type: "string" }, a2uiJson: { type: "string" } },

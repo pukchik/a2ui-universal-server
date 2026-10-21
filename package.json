@@ -16,10 +16,10 @@
     "test": "vitest run",
     "db:migrate": "node --env-file-if-exists=demo/.env server/migrate.ts",
     "smoke:codex": "node --env-file-if-exists=demo/.env demo/scripts/smoke-codex.ts",
-    "format": "prettier --write server catalog packages tests scripts demo .gitea package.json tsconfig.json vitest.config.ts pnpm-workspace.yaml",
+    "format": "prettier --write server catalog packages tests scripts demo examples .gitea package.json tsconfig.json vitest.config.ts pnpm-workspace.yaml",
     "browser:install": "playwright install chromium",
     "test:ci": "bash scripts/test-ci.sh",
-    "format:check": "prettier --check server catalog packages tests scripts demo .gitea package.json tsconfig.json vitest.config.ts pnpm-workspace.yaml",
+    "format:check": "prettier --check server catalog packages tests scripts demo examples .gitea package.json tsconfig.json vitest.config.ts pnpm-workspace.yaml",
     "test:components": "vitest run tests/components.test.ts"
   },
   "dependencies": {

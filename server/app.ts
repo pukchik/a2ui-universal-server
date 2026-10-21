@@ -10,6 +10,7 @@ import { Engine } from "./engine.ts";
 import type { Adapter } from "./adapters/types.ts";
 import type { ToolRegistry } from "./tools.ts";
 import { registerAuth } from "./auth.ts";
+import type { AuthProvider } from "./auth.ts";
 import { registerMcp } from "./mcp.ts";
 import { configuredCatalog } from "./catalog-config.ts";
 import { defaultCatalog } from "../packages/catalogs/src/index.ts";
@@ -23,18 +24,18 @@ import {
   cancelSchema,
 } from "../packages/contracts/src/index.ts";
 import type { Action } from "../packages/contracts/src/index.ts";
-export async function buildApp(
-  config: Config,
-  options: {
-    adapter: Adapter;
-    tools?: ToolRegistry;
-    instructions?: string;
-    webRoot?: string;
-    store?: Store;
-    logger?: boolean;
-    startEngine?: boolean;
-  },
-) {
+export type AppOptions = {
+  adapter: Adapter;
+  adapterName?: string;
+  auth?: AuthProvider;
+  tools?: ToolRegistry;
+  instructions?: string;
+  webRoot?: string;
+  store?: Store;
+  logger?: boolean;
+  startEngine?: boolean;
+};
+export async function buildApp(config: Config, options: AppOptions) {
   const streams = new Set<() => void>();
   const app = Fastify({
     logger: options.logger ?? false,
@@ -70,7 +71,14 @@ export async function buildApp(
   });
   app.get("/openapi.json", async () => app.swagger());
   await app.register(cookie);
-  const auth = await registerAuth(app, store, config);
+  const adapterName = options.adapterName ?? options.adapter.kind;
+  const auth = await registerAuth(
+    app,
+    store,
+    config,
+    adapterName,
+    options.auth,
+  );
   app.addHook("onRequest", async (_req, reply) => {
     reply
       .header("x-content-type-options", "nosniff")
@@ -163,7 +171,7 @@ export async function buildApp(
     protocol: "v0.9.1",
     catalogId: CATALOG_ID,
     profile: PROFILE,
-    adapter: config.ADAPTER,
+    adapter: adapterName,
   }));
   app.get("/v1/dialogs", async (req) =>
     store.list((await auth.requireUser(req)).userId),

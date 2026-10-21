@@ -12,64 +12,45 @@
 
 ```ts
 import { z } from "zod";
-import { buildApp } from "../server/app.ts";
-import { configFrom } from "../server/config.ts";
-import { codexAdapter } from "../server/adapters/codex/index.ts";
-import type { ToolRegistry } from "../server/tools.ts";
+import { startServer, configFrom } from "../server/index.ts";
+import type { ToolRegistry } from "../server/index.ts";
+import {
+  codexAdapter,
+  codexOptionsFrom,
+} from "../server/adapters/codex/index.ts";
 
-const config = configFrom(process.env);
 const tools: ToolRegistry = {
   get_server_uptime: {
     description: "Время работы процесса приложения в секундах",
     schema: z.object({}).strict(),
-    execute: async () => ({ seconds: Math.floor(process.uptime()) }),
+    execute: async (_args, context) => {
+      context.signal.throwIfAborted();
+      return { seconds: Math.floor(process.uptime()) };
+    },
   },
 };
 
-const { app, store, engine } = await buildApp(config, {
-  adapter: codexAdapter({
-    executable: config.CODEX_BIN,
-    profileDir: config.CODEX_PROFILE_DIR!,
-    model: config.CODEX_MODEL,
-  }),
+const server = await startServer(configFrom(process.env), {
+  adapter: codexAdapter(codexOptionsFrom(process.env)),
+  adapterName: "codex",
   tools,
   instructions: `Ты помощник оператора. Отвечай по-русски.
 Для времени работы вызывай get_server_uptime, не придумывай результат.
 Верни text и a2uiJson — строку с массивом сообщений A2UI v0.9.1.
 Используй каталог из контекста. У каждой поверхности корень id=root.
-Для результата достаточно компонента Text. При замене поверхности
-сначала удали прежнюю. При ошибке источника объясни её и верни a2uiJson="[]".`,
+Для результата достаточно Text. При замене поверхности сначала удали прежнюю.
+При ошибке источника объясни её и верни a2uiJson="[]".`,
   logger: true,
-  startEngine: false,
 });
-
-let closing = false;
-async function shutdown() {
-  if (closing) return;
-  closing = true;
-  await app.close(); // preClose останавливает engine и SSE
-  await store.close();
-}
-for (const name of ["SIGINT", "SIGTERM"] as const)
-  process.once(name, () => void shutdown());
-
-try {
-  await store.migrate();
-  await store.acquireLock(() => {
-    app.log.fatal("Потеряна блокировка исполнения PostgreSQL");
-    void shutdown().finally(() => process.exit(1));
-  });
-  await app.listen({ host: config.HOST, port: config.PORT });
-  engine.start();
-} catch (error) {
-  await shutdown();
-  throw error;
-}
+// SIGINT/SIGTERM обрабатываются автоматически.
+// Для программной остановки: await server.close();
 ```
 
-Порядок запуска существенен: `buildApp` с `startEngine: false` → миграции → блокировка единственного исполнителя → listener → `engine.start()`. Один процесс обслуживает одну БД приложения. Потеря блокировки должна останавливать приложение. `buildApp` сам по себе миграции и блокировку не выполняет.
+`startServer` выполняет миграции, получает блокировку единственного исполнителя, открывает listener, запускает Engine и закрывает ресурсы при ошибке. `close()` идемпотентен и освобождает блокировку. Потеря блокировки останавливает приложение. Для встраивания в существующий процесс задайте `handleSignals: false` и вызывайте `close` из его жизненного цикла; при необходимости используйте `onLockLost`. Helper владеет Store и закрывает его, включая явно переданный `options.store`.
 
-Для статического фронтенда передайте `webRoot` с абсолютным путём к собранной папке. Без него API работает, но сервер не обслуживает страницу `/`. Можно оставить отдельный dev-сервер с proxy, как в `demo/web/vite.config.ts`.
+Низкоуровневый `buildApp` остаётся для Fastify inject и собственного lifecycle. При его использовании сохраните порядок `startEngine: false` → миграции → блокировка → listener → Engine; сам `buildApp` не запускает миграции и не получает lock.
+
+Для статического фронтенда передайте `webRoot` с абсолютным путём к сборке. Без него API работает, но страница `/` не обслуживается. Можно оставить отдельный dev-сервер с proxy, как в `demo/web/vite.config.ts`.
 
 Создайте свой `project/.env`, не добавляя его в Git:
 
@@ -79,7 +60,6 @@ PORT=3100
 PUBLIC_URL=http://localhost:3100
 DATABASE_URL=postgres://USER:PASSWORD@127.0.0.1:5432/PROJECT_DB
 AUTH_MODE=demo
-ADAPTER=codex
 CODEX_BIN=codex
 CODEX_PROFILE_DIR=/absolute/path/to/service-codex-profile
 ```
@@ -94,11 +74,41 @@ node --env-file=project/.env project/main.ts
 
 ## Инструменты и права
 
-`ToolRegistry` передаётся через `buildApp({…}, { tools })`. У каждого инструмента есть `description`, Zod-схема объекта и `execute(args)`. Аргументы проверяются сервером; результат должен быть сериализуемым JSON. Вызовы записываются в PostgreSQL и связываются с активным запуском. Пример реального приложения — `demo/server/tools.ts`.
+`ToolRegistry` передаётся в options `startServer`/`buildApp`. У каждого инструмента есть `description`, Zod-схема объекта и `execute(args, context)`. Аргументы проверяются сервером; результат должен быть сериализуемым JSON. Вызовы записываются в PostgreSQL и связываются с активным запуском. Пример реального приложения — `demo/server/tools.ts`.
 
 Внутренний `POST /internal/mcp` создаётся сервером. Codex получает URL и короткоживущий bearer token только своего запуска. Токен не передаётся браузеру и отзывается перед исправлением ответа, при отмене и завершении. Внешний MCP-инструментарий автоматически не импортируется: для внешнего API напишите свой обработчик.
 
-Текущий `execute` получает только аргументы: проверенный пользователь/организация в его сигнатуру не передаются. Реестр общий для процесса. Используйте его для общих данных проекта. Перед работой с личными данными потребуется расширить контракт и передавать серверный контекст владельца до обработчика, с тестами изоляции. `userId` из текста агента или аргументов инструмента не подтверждает права. Готового механизма подтверждения записывающих действий нет; MCP сейчас объявляет инструменты читающими.
+`ToolContext` содержит readonly `userId`, `dialogId`, `runId` и `signal`. Владелец определяется по активному запуску в БД, а не аргументам агента; это одинаково для прямого вызова и MCP. В обработчике фильтруйте данные по `context.userId`, проверяйте доступ к конкретному ресурсу и передавайте `context.signal` в fetch/запросы, поддерживающие отмену. Доверенный ID не реализует предметные ACL автоматически. Готового механизма подтверждения записей и контекста организации нет; MCP пока объявляет инструменты читающими. Пример личных данных — [notes](../examples/notes/README.md).
+
+## Авторизация существующего проекта
+
+Для собственной сессии задайте `AUTH_MODE=custom` и `options.auth`. Этот режим требует серверного `AuthProvider.resolve(request)`; без него запуск завершится ошибкой. OIDC/demo продолжают работать без custom provider.
+
+Пример `project/auth.ts` для уже существующего хранилища сессий:
+
+```ts
+import type { AuthProvider, AuthSession } from "../server/index.ts";
+
+export function applicationAuth(
+  lookup: (cookie: string) => Promise<AuthSession | undefined>,
+  revoke: (cookie: string) => Promise<void>,
+): AuthProvider {
+  return {
+    resolve: (request) => lookup(request.cookies.app_session ?? ""),
+    login: (_request, reply) => reply.redirect("/login"),
+    async logout(request, reply) {
+      await revoke(request.cookies.app_session ?? "");
+      reply.clearCookie("app_session", { path: "/" });
+    },
+  };
+}
+```
+
+Реализуйте lookup/revoke через авторитетное хранилище вашего приложения, затем передайте результат factory в `options.auth`. `AuthSession` содержит `userId`, `name`, серверный `csrf` и `expiresAt: Date`. Неверная или просроченная сессия не даёт доступа. Header/query `userId` от клиента не является проверкой личности.
+
+Проверки Origin и CSRF действуют и в custom-режиме. Существующее приложение должно создавать/хранить CSRF-токен с сессией; клиент получает его через `/v1/session`. SSE повторно вызывает resolve при работе соединения, поэтому отзыв/истечение сессии закрывает подписку. `login` и `logout` необязательны: при обращении к отсутствующей операции API возвращает 501, а не имитирует вход/отзыв. Внешний backend может использовать свои маршруты входа.
+
+Образец `examples/notes` демонстрирует это с непрозрачной cookie и двумя учебными пользователями; его вход разрешён только локально. В тестах приложение запускается из отдельной временной папки вне checkout и выполняет запрос → инструмент → UI → действие → восстановление.
 
 ## Инструкции и каталог
 
@@ -146,13 +156,13 @@ const snapshot = await client.snapshot(dialogId);
 
 Контракты находятся в `server/adapters/types.ts`. `AgentAdapter.run(context, callTool, signal)` возвращает `{ text, a2uiJson }`; `ModelAdapter.step` возвращает итог либо запросы инструментов. Для модели сервер выполняет цикл до восьми шагов, готовый агент ведёт его сам. Все вызовы должны соблюдать `AbortSignal`. На `context.repair` инструменты недоступны.
 
-Передавайте экземпляр через `options.adapter`; динамического обнаружения адаптеров нет. Значение `ADAPTER` в текущей конфигурации — только `codex | fixture`, оно также попадает в метаданные API. Для новой штатной интеграции согласованно обновите конфигурацию, выбор адаптера и метаданные. Методами `describe`, `host.emitText` или `host.proposeUi` код сейчас не располагает. Для текстового промпта можно переиспользовать `server/prompt.ts`; сторонний адаптер сам решает, как передать `AgentContext` своему провайдеру.
+Передавайте экземпляр через `options.adapter`, метку для API — через `options.adapterName`; по умолчанию метка равна `adapter.kind`. Динамического обнаружения адаптеров нет. Общий `configFrom` не проверяет настройки провайдера: для Codex вызывайте `codexOptionsFrom`. `ADAPTER=codex|fixture` относится только к `demo/server/config.ts`. Методами `describe`, `host.emitText` или `host.proposeUi` код сейчас не располагает. Для текстового промпта можно переиспользовать `server/prompt.ts`; сторонний адаптер сам решает, как передать `AgentContext` своему провайдеру.
 
 ## Когда подключение проверено
 
 До использования в приложении подтвердите вход, запрос → инструмент → принятый A2UI, действие формы → обновление, восстановление страницы, отмену и отказ для чужого диалога. Некорректный JSON/A2UI должен получить одну попытку исправления; повторная ошибка сохраняет прежний UI. Команды проверки и границы уже выполненных прогонов — в [VALIDATION.md](VALIDATION.md).
 
-Сейчас это основа для интеграции в одном процессе. Распределённые исполнители, готовая авторизация предметных инструментов, согласование записывающих действий, пагинация/очистка истории и автоматический деплой ещё требуют работы. Нельзя считать их готовыми только по наличию общего HTTP API.
+Сейчас это основа для интеграции в одном процессе. Распределённые исполнители, контекст организаций и готовые предметные ACL, согласование записывающих действий, пагинация/очистка истории и автоматический деплой ещё требуют работы. Нельзя считать их готовыми только по наличию общего HTTP API.
 
 ## Указатель для агента в другом репозитории
 
