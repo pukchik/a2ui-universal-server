@@ -28,7 +28,7 @@ it("caches catalog loads and preserves old snapshots across explicit refresh", a
   first.document.components = {};
   expect((await registry.get("local")).document.components).not.toEqual({});
 });
-it("prepares a pinned catalog from the installed official SDK", async () => {
+it("prepares a pinned catalog from the editable component files", async () => {
   const catalog = await defaultCatalog();
   expect(catalog.protocol).toBe("v0.9.1");
   expect(catalog.digest).toHaveLength(64);

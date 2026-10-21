@@ -1,20 +1,11 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
 import { z } from "zod";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CATALOG_ID, PROFILE } from "../../contracts/src/index.ts";
-export const supportedComponents = [
-  "Text",
-  "Column",
-  "Row",
-  "Button",
-  "TextField",
-  "Divider",
-  "Card",
-] as const;
+import { editableCatalog } from "../../../catalog/index.ts";
+export { supportedComponents } from "../../../catalog/index.ts";
 const documentSchema = z
   .object({
     catalogId: z.string().min(1),
@@ -154,20 +145,7 @@ export function mcpCatalog(
   };
 }
 export async function defaultCatalog(): Promise<CatalogSnapshot> {
-  const require = createRequire(import.meta.url);
-  const dir = join(dirname(require.resolve("@a2ui/web_core/v0_9")), "schemas");
-  const catalog = JSON.parse(
-    await readFile(join(dir, "catalogs/basic/catalog.json"), "utf8"),
-  );
-  catalog.components = Object.fromEntries(
-    supportedComponents.map((name) => [name, catalog.components[name]]),
-  );
-  catalog.functions = {};
-  catalog.version = "0.14.0";
-  catalog.profile = PROFILE;
-  catalog.common = JSON.parse(
-    await readFile(join(dir, "common_types.json"), "utf8"),
-  );
+  const catalog = structuredClone(editableCatalog);
   const registry = new CatalogRegistry();
   registry.register({ name: "basic", load: async () => catalog });
   const snapshot = await registry.get("basic");

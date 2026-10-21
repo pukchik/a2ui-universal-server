@@ -1,0 +1,36 @@
+{
+  "valid": [
+    {
+      "id": "root",
+      "component": "Column",
+      "children": ["label"],
+      "align": "stretch"
+    },
+    {
+      "id": "root",
+      "component": "Column",
+      "children": []
+    }
+  ],
+  "invalid": [
+    {
+      "id": "root",
+      "component": "Column",
+      "children": "label"
+    },
+    {
+      "id": "root",
+      "component": "Column",
+      "children": {
+        "componentId": "label",
+        "path": "/items"
+      }
+    },
+    {
+      "id": "root",
+      "component": "Column",
+      "children": [],
+      "align": "diagonal"
+    }
+  ]
+}

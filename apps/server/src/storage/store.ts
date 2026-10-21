@@ -400,9 +400,11 @@ export class Store {
       ]);
       await this.active(c, run);
       const row = (
-        await c.query("SELECT ui FROM dialogs WHERE id=$1", [run.dialogId])
+        await c.query("SELECT ui,catalog FROM dialogs WHERE id=$1", [
+          run.dialogId,
+        ])
       ).rows[0];
-      const ui = applyUi(row.ui, messages);
+      const ui = applyUi(row.ui, messages, row.catalog?.document);
       await c.query("UPDATE dialogs SET ui=$2 WHERE id=$1", [run.dialogId, ui]);
       if (ui.revision !== row.ui.revision)
         await this.event(c, run.dialogId, "ui.updated", { ui }, run.id);

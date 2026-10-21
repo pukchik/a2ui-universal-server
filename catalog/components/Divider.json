@@ -1,0 +1,28 @@
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/ComponentCommon"
+    },
+    {
+      "$ref": "#/$defs/CatalogComponentCommon"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "component": {
+          "const": "Divider"
+        },
+        "axis": {
+          "type": "string",
+          "description": "The orientation of the divider.",
+          "enum": ["horizontal", "vertical"],
+          "default": "horizontal"
+        }
+      },
+      "required": ["component"]
+    }
+  ],
+  "unevaluatedProperties": false,
+  "description": "Разделитель между элементами интерфейса."
+}

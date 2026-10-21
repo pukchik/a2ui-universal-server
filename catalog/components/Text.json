@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/ComponentCommon"
+    },
+    {
+      "$ref": "#/$defs/CatalogComponentCommon"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "component": {
+          "const": "Text"
+        },
+        "text": {
+          "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/DynamicString",
+          "description": "The text content to display. While simple Markdown formatting is supported (i.e. without HTML, images, or links), utilizing dedicated UI components is generally preferred for a richer and more structured presentation."
+        },
+        "variant": {
+          "type": "string",
+          "description": "A hint for the base text style.",
+          "enum": ["h1", "h2", "h3", "h4", "h5", "caption", "body"],
+          "default": "body"
+        }
+      },
+      "required": ["component", "text"]
+    }
+  ],
+  "unevaluatedProperties": false,
+  "description": "Текст или заголовок. Значение — строка или привязка к данным."
+}

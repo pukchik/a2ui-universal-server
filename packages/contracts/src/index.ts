@@ -1,5 +1,6 @@
 import type { CatalogSnapshot } from "../../catalogs/src/index.ts";
 import { Type } from "@sinclair/typebox";
+import catalog from "../../../catalog/catalog.json" with { type: "json" };
 export type Json =
   | null
   | boolean
@@ -92,6 +93,5 @@ export const cancelSchema = Type.Object(
   { commandId },
   { additionalProperties: false },
 );
-export const CATALOG_ID =
-  "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
-export const PROFILE = "basic-static-0.14.0-v1";
+export const CATALOG_ID = catalog.catalogId;
+export const PROFILE = catalog.profile;

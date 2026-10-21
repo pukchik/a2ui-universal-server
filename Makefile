@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup db build run codex start demo dev web check test smoke-codex
+.PHONY: help setup db build run codex start demo dev web check test test-components smoke-codex
 
 # Keep the root commands compatible; the example's commands live in demo/.
-help setup db build run codex start demo dev web check test smoke-codex:
+help setup db build run codex start demo dev web check test test-components smoke-codex:
 	$(MAKE) -C demo $@

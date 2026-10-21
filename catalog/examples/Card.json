@@ -1,0 +1,28 @@
+{
+  "valid": [
+    {
+      "id": "root",
+      "component": "Card",
+      "child": "label"
+    },
+    {
+      "id": "root",
+      "component": "Card",
+      "child": "label",
+      "accessibility": {
+        "label": "Карточка товара"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "id": "root",
+      "component": "Card"
+    },
+    {
+      "id": "root",
+      "component": "Card",
+      "child": ["label"]
+    }
+  ]
+}

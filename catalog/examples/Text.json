@@ -1,0 +1,34 @@
+{
+  "valid": [
+    {
+      "id": "root",
+      "component": "Text",
+      "text": "Подходящие лампы",
+      "variant": "h2"
+    },
+    {
+      "id": "root",
+      "component": "Text",
+      "text": {
+        "path": "/title"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "id": "root",
+      "component": "Text",
+      "text": 42
+    },
+    {
+      "id": "root",
+      "component": "Text"
+    },
+    {
+      "id": "root",
+      "component": "Text",
+      "text": "Текст",
+      "variant": "large"
+    }
+  ]
+}

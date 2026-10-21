@@ -1,0 +1,38 @@
+{
+  "valid": [
+    {
+      "id": "root",
+      "component": "TextField",
+      "label": "Уточнить поиск",
+      "value": {
+        "path": "/query"
+      }
+    },
+    {
+      "id": "root",
+      "component": "TextField",
+      "label": "Комментарий",
+      "value": "Тёплый свет",
+      "variant": "longText"
+    }
+  ],
+  "invalid": [
+    {
+      "id": "root",
+      "component": "TextField",
+      "label": 42
+    },
+    {
+      "id": "root",
+      "component": "TextField",
+      "label": "Поиск",
+      "value": 42
+    },
+    {
+      "id": "root",
+      "component": "TextField",
+      "label": "Поиск",
+      "validationRegexp": ".*"
+    }
+  ]
+}

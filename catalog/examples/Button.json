@@ -1,0 +1,63 @@
+{
+  "valid": [
+    {
+      "id": "root",
+      "component": "Button",
+      "child": "label",
+      "action": {
+        "event": {
+          "name": "search",
+          "context": {
+            "query": {
+              "path": "/query"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "root",
+      "component": "Button",
+      "child": "label",
+      "variant": "primary",
+      "action": {
+        "event": {
+          "name": "select",
+          "context": {
+            "productId": "lamp-1"
+          }
+        }
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "id": "root",
+      "component": "Button",
+      "child": "label"
+    },
+    {
+      "id": "root",
+      "component": "Button",
+      "child": 1,
+      "action": {
+        "event": {
+          "name": "search"
+        }
+      }
+    },
+    {
+      "id": "root",
+      "component": "Button",
+      "child": "label",
+      "action": {
+        "functionCall": {
+          "call": "openUrl",
+          "args": {
+            "url": "https://example.test"
+          }
+        }
+      }
+    }
+  ]
+}

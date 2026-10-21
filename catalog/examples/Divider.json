@@ -1,0 +1,25 @@
+{
+  "valid": [
+    {
+      "id": "root",
+      "component": "Divider"
+    },
+    {
+      "id": "root",
+      "component": "Divider",
+      "axis": "vertical"
+    }
+  ],
+  "invalid": [
+    {
+      "id": "root",
+      "component": "Divider",
+      "axis": "diagonal"
+    },
+    {
+      "id": "root",
+      "component": "Divider",
+      "axis": 42
+    }
+  ]
+}

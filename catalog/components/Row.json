@@ -1,0 +1,47 @@
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/ComponentCommon"
+    },
+    {
+      "$ref": "#/$defs/CatalogComponentCommon"
+    },
+    {
+      "type": "object",
+      "description": "A layout component that arranges its children horizontally. To create a grid layout, nest Columns within this Row.",
+      "properties": {
+        "component": {
+          "const": "Row"
+        },
+        "children": {
+          "description": "Defines the children. Use an array of strings for a fixed set of children, or a template object to generate children from a data list. Children cannot be defined inline, they must be referred to by ID.",
+          "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/ChildList"
+        },
+        "justify": {
+          "type": "string",
+          "description": "Defines the arrangement of children along the main axis (horizontally). Use 'spaceBetween' to push items to the edges, or 'start'/'end'/'center' to pack them together.",
+          "enum": [
+            "center",
+            "end",
+            "spaceAround",
+            "spaceBetween",
+            "spaceEvenly",
+            "start",
+            "stretch"
+          ],
+          "default": "start"
+        },
+        "align": {
+          "type": "string",
+          "description": "Defines the alignment of children along the cross axis (vertically). This is similar to the CSS 'align-items' property, but uses camelCase values (e.g., 'start').",
+          "enum": ["start", "center", "end", "stretch"],
+          "default": "stretch"
+        }
+      },
+      "required": ["component", "children"]
+    }
+  ],
+  "unevaluatedProperties": false,
+  "description": "Горизонтальное расположение компонентов по их ID. Дочерние элементы задаются статическим списком."
+}

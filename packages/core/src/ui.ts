@@ -7,16 +7,8 @@ import { basicCatalog } from "@a2ui/web_core/v0_9/basic_catalog";
 import type { Action, UiMessage, UiState } from "../../contracts/src/index.ts";
 import { CATALOG_ID } from "../../contracts/src/index.ts";
 import { AppError } from "./errors.ts";
-
-const supported = new Set([
-  "Text",
-  "Column",
-  "Row",
-  "Button",
-  "TextField",
-  "Divider",
-  "Card",
-]);
+import { componentSchemas } from "../../../catalog/index.ts";
+import type { ComponentCatalog } from "../../../catalog/index.ts";
 const badKeys = new Set([
   "__proto__",
   "constructor",
@@ -38,7 +30,11 @@ export function safeJson(value: unknown, depth = 0): void {
       safeJson(child, depth + 1);
     }
 }
-export function applyUi(current: UiState, messages: unknown): UiState {
+export function applyUi(
+  current: UiState,
+  messages: unknown,
+  catalog?: ComponentCatalog,
+): UiState {
   if (
     !Array.isArray(messages) ||
     messages.length > 32 ||
@@ -50,6 +46,7 @@ export function applyUi(current: UiState, messages: unknown): UiState {
       "Ожидается до 32 сообщений A2UI, не более 128 КБ.",
     );
   safeJson(messages);
+  const schemas = componentSchemas(catalog);
   const surfaces = new Map<
     string,
     {
@@ -107,8 +104,15 @@ export function applyUi(current: UiState, messages: unknown): UiState {
             throw new AppError(422, "unsupported_template");
           if ("validationRegexp" in component)
             throw new AppError(422, "unsupported_validation");
-          if (!supported.has(String(component.component)))
-            throw new AppError(422, "unsupported_component");
+          const name = String(component.component);
+          const validate = schemas.get(name);
+          if (!validate) throw new AppError(422, "unsupported_component");
+          if (!validate(component))
+            throw new AppError(
+              422,
+              "invalid_component",
+              `${name}: ${JSON.stringify(validate.errors).slice(0, 1200)}`,
+            );
           if (
             component.component === "Button" &&
             !(component.action as { event?: unknown })?.event

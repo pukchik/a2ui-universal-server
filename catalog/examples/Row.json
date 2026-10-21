@@ -1,0 +1,32 @@
+{
+  "valid": [
+    {
+      "id": "root",
+      "component": "Row",
+      "children": ["label"],
+      "justify": "spaceBetween"
+    },
+    {
+      "id": "root",
+      "component": "Row",
+      "children": []
+    }
+  ],
+  "invalid": [
+    {
+      "id": "root",
+      "component": "Row",
+      "children": [1]
+    },
+    {
+      "id": "root",
+      "component": "Row"
+    },
+    {
+      "id": "root",
+      "component": "Row",
+      "children": [],
+      "justify": "diagonal"
+    }
+  ]
+}

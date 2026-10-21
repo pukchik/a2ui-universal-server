@@ -1,0 +1,39 @@
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/ComponentCommon"
+    },
+    {
+      "$ref": "#/$defs/CatalogComponentCommon"
+    },
+    {
+      "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/Checkable"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "component": {
+          "const": "TextField"
+        },
+        "label": {
+          "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/DynamicString",
+          "description": "The text label for the input field."
+        },
+        "value": {
+          "$ref": "https://a2ui.org/specification/v0_9/common_types.json#/$defs/DynamicString",
+          "description": "The value of the text field."
+        },
+        "variant": {
+          "type": "string",
+          "description": "The type of input field to display.",
+          "enum": ["longText", "number", "shortText", "obscured"],
+          "default": "shortText"
+        }
+      },
+      "required": ["component", "label"]
+    }
+  ],
+  "unevaluatedProperties": false,
+  "description": "Поле ввода с подписью. Значение можно связать с данными формы."
+}

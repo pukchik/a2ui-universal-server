@@ -2,7 +2,7 @@ ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
 
 .DEFAULT_GOAL := help
 .NOTPARALLEL:
-.PHONY: help setup db build run codex start demo dev web check test smoke-codex
+.PHONY: help setup db build run codex start demo dev web check test test-components smoke-codex
 
 help: ## Показать команды
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  make %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -41,6 +41,9 @@ check: ## Форматирование и типы
 
 test: ## Тесты; для полного прогона задайте TEST_DATABASE_URL
 	cd "$(ROOT)" && pnpm test
+
+test-components: ## Схемы и примеры компонентов, без PostgreSQL и модели
+	cd "$(ROOT)" && pnpm test:components
 
 smoke-codex: ## Настоящий запрос к Codex и действие A2UI; нужна отдельная БД
 	cd "$(ROOT)" && pnpm smoke:codex

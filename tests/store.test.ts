@@ -4,6 +4,7 @@ import { Store } from "../apps/server/src/storage/store.ts";
 import { productUi } from "../demo/server/tools.ts";
 import { Engine } from "../apps/server/src/engine.ts";
 import { z } from "zod";
+import { CatalogRegistry } from "../packages/catalogs/src/index.ts";
 import type { Adapter } from "../apps/server/src/adapters/types.ts";
 const url = process.env.TEST_DATABASE_URL;
 describe.skipIf(!url)("PostgreSQL commands and execution", () => {
@@ -87,6 +88,47 @@ describe.skipIf(!url)("PostgreSQL commands and execution", () => {
         0,
       ),
     ).rejects.toMatchObject({ code: "stale_ui" });
+  });
+  it("validates component properties against the dialog's pinned catalog", async () => {
+    const original = store.catalog!;
+    const previousDialog = await create();
+    const edited = structuredClone(original.document);
+    const components = edited.components as Record<string, { allOf: any[] }>;
+    components.Text.allOf.at(-1).properties.variant.enum = ["body"];
+    const registry = new CatalogRegistry();
+    registry.register({ name: "edited", load: async () => edited });
+    let restrictedDialog: string;
+    try {
+      store.catalog = await registry.get("edited");
+      restrictedDialog = await create();
+    } finally {
+      store.catalog = original;
+    }
+    await store.accept(user, previousDialog, randomUUID(), {
+      text: "original",
+    });
+    const previousRun = (await store.claim())!;
+    await expect(
+      store.complete(previousRun, "heading", productUi()),
+    ).resolves.toBeUndefined();
+    await store.accept(user, restrictedDialog, randomUUID(), {
+      text: "edited",
+    });
+    const restrictedRun = (await store.claim())!;
+    try {
+      await expect(
+        store.complete(restrictedRun, "heading", productUi()),
+      ).rejects.toMatchObject({ code: "invalid_component" });
+      expect((await store.get(restrictedDialog, user)).ui.revision).toBe(0);
+    } finally {
+      await store.fail(restrictedRun, "test", "Finished validation test");
+    }
+    expect(
+      (await store.snapshot(previousDialog, user)).dialog.catalog?.digest,
+    ).toBe(original.digest);
+    expect(
+      (await store.snapshot(restrictedDialog, user)).dialog.catalog?.digest,
+    ).not.toBe(original.digest);
   });
   it("never lets a cancelled executor publish UI or use tools", async () => {
     const id = await create();
