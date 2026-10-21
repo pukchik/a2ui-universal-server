@@ -11,8 +11,8 @@ import {
 import { defaultCatalog } from "../packages/catalogs/src/index.ts";
 import { CATALOG_ID } from "../packages/contracts/src/index.ts";
 import { applyUi } from "../packages/core/src/ui.ts";
-import { preparePrompt } from "../apps/server/src/prompt.ts";
-import type { AgentContext } from "../apps/server/src/adapters/types.ts";
+import { preparePrompt } from "../server/prompt.ts";
+import type { AgentContext } from "../server/adapters/types.ts";
 
 const validators = componentSchemas();
 const empty = { messages: [], revision: 0 };

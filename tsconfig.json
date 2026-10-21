@@ -14,7 +14,7 @@
     "resolveJsonModule": true
   },
   "include": [
-    "apps/**/*.ts",
+    "server/**/*.ts",
     "catalog/**/*.ts",
     "demo/**/*.ts",
     "packages/**/*.ts",

@@ -3,7 +3,7 @@ import * as oidc from "openid-client";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import type { Config } from "./config.ts";
 import type { Store, Session } from "./storage/store.ts";
-import { AppError } from "../../../packages/core/src/errors.ts";
+import { AppError } from "../packages/core/src/errors.ts";
 export const token = () => randomBytes(32).toString("base64url");
 export const tokenHash = (v: string) =>
   createHash("sha256").update(v).digest("hex");

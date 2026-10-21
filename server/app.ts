@@ -12,8 +12,8 @@ import type { ToolRegistry } from "./tools.ts";
 import { registerAuth } from "./auth.ts";
 import { registerMcp } from "./mcp.ts";
 import { configuredCatalog } from "./catalog-config.ts";
-import { defaultCatalog } from "../../../packages/catalogs/src/index.ts";
-import { AppError } from "../../../packages/core/src/errors.ts";
+import { defaultCatalog } from "../packages/catalogs/src/index.ts";
+import { AppError } from "../packages/core/src/errors.ts";
 import {
   CATALOG_ID,
   PROFILE,
@@ -21,8 +21,8 @@ import {
   messageSchema,
   actionSchema,
   cancelSchema,
-} from "../../../packages/contracts/src/index.ts";
-import type { Action } from "../../../packages/contracts/src/index.ts";
+} from "../packages/contracts/src/index.ts";
+import type { Action } from "../packages/contracts/src/index.ts";
 export async function buildApp(
   config: Config,
   options: {

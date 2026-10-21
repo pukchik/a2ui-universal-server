@@ -1,4 +1,4 @@
-import { configFrom } from "../../apps/server/src/config.ts";
+import { configFrom } from "../../server/config.ts";
 import { buildDemoApp as buildApp } from "./app.ts";
 const config = configFrom(process.env);
 const { app, store, engine } = await buildApp(config, {

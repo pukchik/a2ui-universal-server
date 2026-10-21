@@ -6,7 +6,7 @@ import {
   localCatalog,
   remoteCatalog,
   mcpCatalog,
-} from "../../../packages/catalogs/src/index.ts";
+} from "../packages/catalogs/src/index.ts";
 const sourceSchema = z
   .object({
     name: z.string(),

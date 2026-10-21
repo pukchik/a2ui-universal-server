@@ -14,12 +14,12 @@
     "build": "pnpm check && vite build --config demo/web/vite.config.ts",
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "db:migrate": "node --env-file-if-exists=demo/.env apps/server/src/migrate.ts",
+    "db:migrate": "node --env-file-if-exists=demo/.env server/migrate.ts",
     "smoke:codex": "node --env-file-if-exists=demo/.env demo/scripts/smoke-codex.ts",
-    "format": "prettier --write apps catalog packages tests scripts demo .gitea package.json tsconfig.json vitest.config.ts pnpm-workspace.yaml",
+    "format": "prettier --write server catalog packages tests scripts demo .gitea package.json tsconfig.json vitest.config.ts pnpm-workspace.yaml",
     "browser:install": "playwright install chromium",
     "test:ci": "bash scripts/test-ci.sh",
-    "format:check": "prettier --check apps catalog packages tests scripts demo .gitea package.json tsconfig.json vitest.config.ts pnpm-workspace.yaml",
+    "format:check": "prettier --check server catalog packages tests scripts demo .gitea package.json tsconfig.json vitest.config.ts pnpm-workspace.yaml",
     "test:components": "vitest run tests/components.test.ts"
   },
   "dependencies": {

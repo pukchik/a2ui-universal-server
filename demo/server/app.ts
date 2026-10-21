@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
-import { buildApp } from "../../apps/server/src/app.ts";
-import type { Config } from "../../apps/server/src/config.ts";
-import { codexAdapter } from "../../apps/server/src/adapters/codex.ts";
+import { buildApp } from "../../server/app.ts";
+import type { Config } from "../../server/config.ts";
+import { codexAdapter } from "../../server/adapters/codex.ts";
 import { fixtureAdapter } from "./fixture.ts";
 import { toolDefinitions } from "./tools.ts";
 import { instructions } from "./instructions.ts";

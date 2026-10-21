@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { AppError } from "../../../../packages/core/src/errors.ts";
+import { AppError } from "../../packages/core/src/errors.ts";
 import { preparePrompt } from "../prompt.ts";
 import type { AgentAdapter, AgentOutput } from "./types.ts";
 export type CodexOptions = {

@@ -4,10 +4,10 @@ import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { desc, eq, and } from "drizzle-orm";
 import { dialogs } from "./schema.ts";
-import { defaultCatalog } from "../../../../packages/catalogs/src/index.ts";
-import type { CatalogSnapshot } from "../../../../packages/catalogs/src/index.ts";
-import { AppError } from "../../../../packages/core/src/errors.ts";
-import { applyUi, validateAction } from "../../../../packages/core/src/ui.ts";
+import { defaultCatalog } from "../../packages/catalogs/src/index.ts";
+import type { CatalogSnapshot } from "../../packages/catalogs/src/index.ts";
+import { AppError } from "../../packages/core/src/errors.ts";
+import { applyUi, validateAction } from "../../packages/core/src/ui.ts";
 import type {
   Action,
   ChatMessage,
@@ -16,7 +16,7 @@ import type {
   Json,
   Run,
   UiState,
-} from "../../../../packages/contracts/src/index.ts";
+} from "../../packages/contracts/src/index.ts";
 export type Session = {
   userId: string;
   name: string;

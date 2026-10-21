@@ -1,11 +1,11 @@
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
-import { Store } from "../apps/server/src/storage/store.ts";
+import { Store } from "../server/storage/store.ts";
 import { productUi } from "../demo/server/tools.ts";
-import { Engine } from "../apps/server/src/engine.ts";
+import { Engine } from "../server/engine.ts";
 import { z } from "zod";
 import { CatalogRegistry } from "../packages/catalogs/src/index.ts";
-import type { Adapter } from "../apps/server/src/adapters/types.ts";
+import type { Adapter } from "../server/adapters/types.ts";
 const url = process.env.TEST_DATABASE_URL;
 describe.skipIf(!url)("PostgreSQL commands and execution", () => {
   const store = new Store(url!);
@@ -161,14 +161,21 @@ describe.skipIf(!url)("PostgreSQL commands and execution", () => {
     ).rejects.toMatchObject({ code: "tool_conflict" });
     await store.fail(run, "test", "test");
   });
-  it("retries one malformed UI answer with tools disabled", async () => {
+  it.each([
+    ["malformed JSON", "invalid"],
+    ["JSON without an A2UI array", "{}"],
+    [
+      "an invalid A2UI message",
+      JSON.stringify([{ version: "v0.9.1", createSurface: { surfaceId: 42 } }]),
+    ],
+  ])("repairs %s once with tools disabled", async (_name, invalid) => {
     const id = await create();
     let n = 0;
     const adapter: Adapter = {
       kind: "agent",
       async run(context, call) {
         n++;
-        if (n === 1) return { text: "bad", a2uiJson: "invalid" };
+        if (n === 1) return { text: "bad", a2uiJson: invalid };
         expect(context.repair).toBeDefined();
         await expect(call("get_product", {}, "no")).rejects.toThrow();
         return { text: "fixed", a2uiJson: JSON.stringify(productUi()) };
@@ -176,12 +183,65 @@ describe.skipIf(!url)("PostgreSQL commands and execution", () => {
     };
     const engine = new Engine(store, adapter, "http://127.0.0.1:1", 1);
     await store.accept(user, id, randomUUID(), { text: "repair" });
-    await engine.pump();
-    await Promise.all([...engine.active.values()].map((v) => v.task));
-    expect((await store.get(id, user)).run?.status).toBe("succeeded");
-    expect(n).toBe(2);
-    await engine.stop();
+    try {
+      await engine.pump();
+      await Promise.all([...engine.active.values()].map((v) => v.task));
+      const snapshot = await store.snapshot(id, user);
+      expect(snapshot.dialog.run?.status).toBe("succeeded");
+      expect(snapshot.dialog.ui.revision).toBe(1);
+      expect(snapshot.messages.at(-1)?.text).toBe("fixed");
+      expect(snapshot.messages.some((message) => message.text === "bad")).toBe(
+        false,
+      );
+      expect(n).toBe(2);
+    } finally {
+      await engine.stop();
+    }
   });
+  it.each([
+    ["malformed JSON", "invalid"],
+    ["valid JSON that is not A2UI", "{}"],
+  ])(
+    "preserves the previous UI when repair still returns %s",
+    async (_name, invalid) => {
+      const id = await create();
+      await store.accept(user, id, randomUUID(), { text: "initial" });
+      await store.complete((await store.claim())!, "initial UI", productUi());
+      const previous = (await store.get(id, user)).ui;
+      let calls = 0;
+      const adapter: Adapter = {
+        kind: "agent",
+        async run(context) {
+          calls++;
+          expect(Boolean(context.repair)).toBe(calls === 2);
+          return { text: "must not be published", a2uiJson: invalid };
+        },
+      };
+      const engine = new Engine(store, adapter, "http://127.0.0.1:1", 1);
+      await store.accept(user, id, randomUUID(), { text: "broken answer" });
+      try {
+        await engine.pump();
+        await Promise.all([...engine.active.values()].map((v) => v.task));
+        const snapshot = await store.snapshot(id, user);
+        expect(snapshot.dialog.run?.status).toBe("failed");
+        expect(snapshot.dialog.run?.error?.code).toBe("invalid_ui");
+        expect(snapshot.dialog.ui).toEqual(previous);
+        expect(
+          snapshot.messages.some(
+            (message) => message.text === "must not be published",
+          ),
+        ).toBe(false);
+        expect(
+          (await store.events(id, user, 0)).filter(
+            (event) => event.type === "ui.updated",
+          ),
+        ).toHaveLength(1);
+        expect(calls).toBe(2);
+      } finally {
+        await engine.stop();
+      }
+    },
+  );
   it("executes only the application's supplied tools", async () => {
     const id = await create();
     const adapter: Adapter = {

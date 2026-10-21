@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { buildDemoApp as buildApp } from "../server/app.ts";
-import { configFrom } from "../../apps/server/src/config.ts";
+import { configFrom } from "../../server/config.ts";
 import type { Action } from "../../packages/contracts/src/index.ts";
 const config = configFrom({
   ...process.env,

@@ -4,7 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ZodRawShape } from "zod";
 import type { Engine } from "./engine.ts";
-import { AppError } from "../../../packages/core/src/errors.ts";
+import { AppError } from "../packages/core/src/errors.ts";
 export function registerMcp(app: FastifyInstance, engine: Engine) {
   app.post("/internal/mcp", async (req, reply) => {
     const auth = req.headers.authorization;

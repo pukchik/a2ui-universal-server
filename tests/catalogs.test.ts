@@ -3,11 +3,8 @@ import {
   CatalogRegistry,
   defaultCatalog,
 } from "../packages/catalogs/src/index.ts";
-import { runAdapter } from "../apps/server/src/adapters/types.ts";
-import type {
-  AgentContext,
-  ModelAdapter,
-} from "../apps/server/src/adapters/types.ts";
+import { runAdapter } from "../server/adapters/types.ts";
+import type { AgentContext, ModelAdapter } from "../server/adapters/types.ts";
 it("caches catalog loads and preserves old snapshots across explicit refresh", async () => {
   let n = 0;
   const registry = new CatalogRegistry();

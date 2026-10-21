@@ -1,9 +1,9 @@
-import type { CatalogSnapshot } from "../../../../packages/catalogs/src/index.ts";
+import type { CatalogSnapshot } from "../../packages/catalogs/src/index.ts";
 import type {
   ChatMessage,
   Dialog,
   Run,
-} from "../../../../packages/contracts/src/index.ts";
+} from "../../packages/contracts/src/index.ts";
 export type AgentContext = {
   run: Run;
   dialog: Dialog;

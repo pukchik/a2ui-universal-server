@@ -2,11 +2,11 @@ import { randomBytes, createHash } from "node:crypto";
 import { Store } from "./storage/store.ts";
 import type { ToolRegistry } from "./tools.ts";
 import { runAdapter } from "./adapters/types.ts";
-import type { CatalogSnapshot } from "../../../packages/catalogs/src/index.ts";
+import type { CatalogSnapshot } from "../packages/catalogs/src/index.ts";
 import type { Adapter, AgentContext } from "./adapters/types.ts";
-import type { Json, Run } from "../../../packages/contracts/src/index.ts";
-import { AppError } from "../../../packages/core/src/errors.ts";
-import { safeJson } from "../../../packages/core/src/ui.ts";
+import type { Json, Run } from "../packages/contracts/src/index.ts";
+import { AppError } from "../packages/core/src/errors.ts";
+import { safeJson } from "../packages/core/src/ui.ts";
 const digest = (v: string) => createHash("sha256").update(v).digest("hex");
 export class Engine {
   catalog?: CatalogSnapshot;

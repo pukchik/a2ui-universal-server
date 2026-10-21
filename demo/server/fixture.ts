@@ -1,4 +1,4 @@
-import type { Adapter } from "../../apps/server/src/adapters/types.ts";
+import type { Adapter } from "../../server/adapters/types.ts";
 import { productUi } from "./tools.ts";
 import type { products } from "./tools.ts";
 export const fixtureAdapter: Adapter = {
